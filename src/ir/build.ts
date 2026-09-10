@@ -142,6 +142,12 @@ export function buildSemanticIR(scan: ScanResult, options: BuildOptions = {}): S
     sectionNodes.push(...inferSections(nodeOrder));
   }
 
+  // A producer group named `reports` and the inferred section of the same name
+  // are two nodes with one id. Duplicate ids make every `find()` downstream
+  // arbitrary — the router would reach one of them and never the other — so
+  // they are folded together here, keeping the producer's node.
+  const sections = mergeSectionsById(sectionNodes, warnings);
+
   const bytes = scan.files.reduce((sum, f) => sum + f.size, 0);
   const artifacts = [...nodes.values()].length;
 
@@ -158,7 +164,7 @@ export function buildSemanticIR(scan: ScanResult, options: BuildOptions = {}): S
     type: 'workspace',
     title: identity.name,
     priority: 0,
-    children: sectionNodes,
+    children: sections,
   };
 
   return {
@@ -207,6 +213,41 @@ function inferKind(entry: FileEntry): Inferred {
     other: 'file',
   };
   return { kind: map[entry.kind], source: 'heuristic' };
+}
+
+/**
+ * Folds sections that ended up with the same id into one.
+ *
+ * The collision is not hypothetical: `inferSections` names its sections after
+ * the built-in kinds, while a producer may declare a group with any id at all
+ * — including `reports` or `code`. Both then exist, the router's `find()` can
+ * only ever reach the first, and the human sees a section they cannot open.
+ *
+ * The producer's node wins the id, the title and the position; the inferred
+ * artifacts are appended to it, which is where they were going to be read
+ * anyway. The merge is reported so a producer can rename the group if it meant
+ * something else.
+ */
+function mergeSectionsById(sections: SemanticNode[], warnings: string[]): SemanticNode[] {
+  const out: SemanticNode[] = [];
+  const byId = new Map<string, SemanticNode>();
+
+  for (const section of sections) {
+    const existing = byId.get(section.id);
+    if (!existing) {
+      byId.set(section.id, section);
+      out.push(section);
+      continue;
+    }
+    existing.children = sortChildren([...existing.children, ...section.children]);
+    if (existing.group && !section.group) {
+      warnings.push(
+        `group "${section.id}" has the same id as a built-in section; the inferred artifacts were merged into it`,
+      );
+    }
+  }
+
+  return out;
 }
 
 function inferSections(nodes: SemanticNode[]): SemanticNode[] {

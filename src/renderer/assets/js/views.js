@@ -14,6 +14,24 @@ import { renderArtifactView } from './artifacts.js';
 import { loadArtifact } from './api.js';
 import { getData, findTask } from './store.js';
 
+/**
+ * What to say about simulation, given that it is a per-action fact.
+ *
+ * A workspace may hand one action to a real provider and let the next one fall
+ * through to the built-in simulator, so "everything here is simulated" would
+ * be false in that case — and telling a human a simulated click is real is the
+ * failure this whole path exists to prevent.
+ */
+function simulatedNotice(data) {
+  const actions = data.actions || [];
+  const simulated = actions.filter((a) => a.simulated).length;
+  if (actions.length === 0 || simulated === 0) return '';
+  if (simulated === actions.length) {
+    return 'No external agent is connected. Every action here is simulated: it changes A2H state only, and says so when it runs.';
+  }
+  return `${simulated} of ${actions.length} actions fall through to the built-in simulator. Those are marked "simulated" where they appear; the rest run against a connected provider.`;
+}
+
 export function overviewView() {
   const data = getData();
   const wrap = el('div', {});
@@ -86,7 +104,7 @@ export function tasksView() {
     wrap.appendChild(
       el('div', { class: 'block-notice tone-info' }, [
         el('span', { class: 'notice-label', text: 'Note' }),
-        el('span', { class: 'notice-body', text: 'Actions are simulated — no external agent is connected.' }),
+        el('span', { class: 'notice-body', text: simulatedNotice(data) }),
       ]),
     );
   }
@@ -204,8 +222,7 @@ export function actionsView() {
     wrap.appendChild(
       el('div', { class: 'block-notice tone-info' }, [
         el('span', { class: 'notice-label', text: 'Note' }),
-        el('span', { class: 'notice-body',
-          text: 'No external agent is connected. Actions change A2H state only; each one is marked as simulated.' }),
+        el('span', { class: 'notice-body', text: simulatedNotice(data) }),
       ]),
     );
   }

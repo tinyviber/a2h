@@ -438,3 +438,72 @@ describe('html is content, not a document', () => {
     expect(html).not.toContain('<img');
   });
 });
+
+describe('a producer-authored link is an allowlist, not a pass-through', () => {
+  // A list block's `href` becomes an `<a href>` in the page. A scheme like
+  // `javascript:` is script execution at click time, and `data:` is document
+  // injection — neither is something the CSP should have to be the one to
+  // catch.
+
+  function panelsWith(block: unknown) {
+    const root = makeWorkspace({
+      ...manifest({ a2h: 1, panels: [block] }),
+      'README.md': '# Hi\n',
+      'notes.md': '# Notes\n',
+    });
+    return new Workspace(root).presentation.panels;
+  }
+
+  function hrefsOf(block: unknown): unknown[] {
+    const panels = panelsWith(block) as { type: string; items: { title: string; href?: string }[] }[];
+    return panels[0]!.items.map((i) => i.href);
+  }
+
+  function listWith(...hrefs: string[]) {
+    return {
+      type: 'list',
+      title: 'Links',
+      items: hrefs.map((href, i) => ({ title: `item ${i}`, href })),
+    };
+  }
+
+  it('strips a javascript: href rather than shipping it to the client', () => {
+    const [unsafe] = hrefsOf(listWith('javascript:alert(1)'));
+    expect(unsafe).toBeUndefined();
+  });
+
+  it('strips data:, file: and protocol-relative hrefs too', () => {
+    const hrefs = hrefsOf(
+      listWith(
+        'data:text/html;base64,PHNjcmlwdD4=',
+        'file:///etc/passwd',
+        '//evil.example.com/login',
+        'vbscript:msgbox(1)',
+      ),
+    );
+    expect(hrefs).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it('keeps the ones a workspace is allowed to write', () => {
+    const hrefs = hrefsOf(
+      listWith('https://example.com/x', 'mailto:a@b.c', '#section', 'notes.md'),
+    );
+    expect(hrefs).toEqual(['https://example.com/x', 'mailto:a@b.c', '#section', 'notes.md']);
+  });
+
+  it('keeps the item itself — only the link is removed', () => {
+    const panels = panelsWith(listWith('javascript:alert(1)')) as { items: unknown[] }[];
+    expect(panels[0]!.items).toHaveLength(1);
+    expect(panels[0]!.items[0]).toMatchObject({ title: 'item 0' });
+  });
+
+  it('does not rewrite a relative image into a remote fetch', () => {
+    const root = makeWorkspace({
+      'notes.md': '# Hi\n\n![x](//evil.example.com/pixel.png)\n',
+    });
+    const html = (new Workspace(root).renderPayload('notes.md')!.content as { html: string }).html;
+    // Either rendered as missing alt text or left for `img-src 'self'` to
+    // refuse — what must not happen is a rewritten, resolvable src.
+    expect(html).not.toContain('/api/file');
+  });
+});

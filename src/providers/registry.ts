@@ -23,7 +23,13 @@ export function createDefaultRegistry(options: RegistryOptions = {}): ProviderRe
 }
 
 export { createMockExecutor } from './mock';
-export type { ActionExecutor, ProviderRegistry, ExecutionOutcome, ActionContext } from './types';
+export type {
+  ActionExecutor,
+  ActionResolution,
+  ProviderRegistry,
+  ExecutionOutcome,
+  ActionContext,
+} from './types';
 
 /** Everything a caller needs to reason about run provenance. */
 export function describeProviders(registry: ProviderRegistry): string {

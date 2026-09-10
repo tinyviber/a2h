@@ -1,5 +1,6 @@
 import { watch } from 'node:fs';
 import { resolve } from 'node:path';
+import type { Presentation } from '../types';
 import { Workspace } from '../server/workspace';
 import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
@@ -155,7 +156,7 @@ function printSummary(workspace: Workspace): void {
   if (presentation.actions.length > 0) {
     console.log(
       `  ${presentation.actions.length} action(s)` +
-        (presentation.simulatedActions ? ' — simulated by the mock executor' : ''),
+        (presentation.simulatedActions ? ` — ${simulationSummary(presentation, true)}` : ''),
     );
   }
   if (presentation.stats.ignored > 0) {
@@ -249,4 +250,22 @@ Examples:
   npx a2h render ../a-coding-task --watch
   npx a2h init . && npx a2h render .
 `);
+}
+
+/**
+ * How to describe the simulation state, now that it is a per-action fact.
+ *
+ * Saying "actions are simulated" when only some of them are would be the exact
+ * misstatement the per-action provenance exists to prevent.
+ */
+function simulationSummary(presentation: Presentation, terse = false): string {
+  const simulated = presentation.actions.filter((a) => a.simulated).length;
+  if (simulated === presentation.actions.length) {
+    return terse
+      ? 'simulated by the built-in executor, no external agent connected'
+      : 'Actions are simulated: no external agent is connected.';
+  }
+  return terse
+    ? `${simulated}/${presentation.actions.length} simulated by the built-in executor`
+    : `${simulated} of ${presentation.actions.length} actions are simulated: no external agent is connected for those.`;
 }

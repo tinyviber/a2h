@@ -1,12 +1,14 @@
 import type {
   ActionView,
   Block,
+  EffectPolicy,
   RunView,
   SemanticsOrigin,
   TaskView,
   TaskStatus,
 } from '../types';
 import type { GroupSpec, LoadedSemantics, ResolvedItem } from './types';
+import { policyFromHint, stricterPolicy } from '../actions/policy';
 
 // Merges producer-authored semantics into a single resolved view.
 //
@@ -28,13 +30,28 @@ export interface ResolvedSemantics {
   warnings: string[];
 }
 
+/**
+ * The provider layer's answer for one action. Structurally satisfied by
+ * `ActionResolution`, but stated without the executor so this module does not
+ * have to know what a provider is.
+ */
+export interface ActionProvenance {
+  simulated: boolean;
+  policy: EffectPolicy;
+}
+
+export type ActionResolver = (action: ActionView) => ActionProvenance | undefined;
+
 export interface ResolveOptions {
   /**
-   * True when no real executor is registered, so declared actions are backed
-   * by the built-in mock provider. Surfaced in the UI so a human is never
-   * misled about what will actually happen.
+   * Who will run each declared action, and what their executor says it will
+   * do. Supplied by the assembler, which is the only layer that knows the
+   * registered providers.
+   *
+   * Absent means "no provider can be named", and the safe reading of that is
+   * `simulated: true` — claiming a real effect is the claim that can mislead.
    */
-  simulatedActions: boolean;
+  resolveAction?: ActionResolver;
 }
 
 export function resolveSemantics(
@@ -88,7 +105,7 @@ export function resolveSemantics(
     items.set(key, next);
   }
 
-  const actions = loaded.actionSpecs.map((a) => toActionView(a, options.simulatedActions));
+  const actions = loaded.actionSpecs.map((a) => toActionView(a, options.resolveAction));
   const actionById = new Map(actions.map((a) => [a.id, a]));
 
   const runs = dedupeRuns(loaded.runSpecs).map(toRunView);
@@ -122,10 +139,17 @@ export function resolveSemantics(
       ? 'mixed'
       : 'inferred';
 
-  if (options.simulatedActions && actions.length > 0) {
-    warnings.push(
-      `${actions.length} action(s) are backed by the built-in mock executor — no external agent is connected.`,
-    );
+  if (actions.length > 0) {
+    const simulated = actions.filter((a) => a.simulated).length;
+    if (simulated === actions.length) {
+      warnings.push(
+        `${simulated} action(s) are backed by the built-in simulator — no external agent is connected.`,
+      );
+    } else if (simulated > 0) {
+      warnings.push(
+        `${simulated} of ${actions.length} action(s) fall through to the built-in simulator; the rest are handled by a connected provider.`,
+      );
+    }
   }
 
   return {
@@ -144,11 +168,19 @@ export function resolveSemantics(
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds the client-facing action view.
+ *
+ * The workspace's declaration is a hint; the executor's policy is
+ * authoritative; the effective value is the stricter of the two. Doing the
+ * merge here (rather than trusting the manifest's own `sideEffect`/`confirm`)
+ * is what stops a workspace from labelling a publish as a no-op.
+ */
 function toActionView(
   spec: import('./types').ActionSpec,
-  simulated: boolean,
+  resolve: ActionResolver | undefined,
 ): ActionView {
-  return {
+  const declared: ActionView = {
     id: spec.id,
     label: spec.label,
     kind: spec.kind ?? 'custom',
@@ -156,7 +188,7 @@ function toActionView(
     target: spec.target,
     description: spec.description,
     sideEffect: spec.sideEffect ?? 'state',
-    confirm: spec.confirm ?? spec.sideEffect === 'external',
+    confirm: false,
     enabled: spec.enabled ?? true,
     params: spec.params?.map((p) => ({
       name: p.name,
@@ -167,7 +199,18 @@ function toActionView(
       placeholder: p.placeholder,
       default: p.default,
     })),
-    simulated,
+    simulated: true,
+  };
+
+  const hint = policyFromHint(spec.sideEffect, spec.confirm);
+  const provenance = resolve?.(declared);
+  const effective = provenance ? stricterPolicy(hint, provenance.policy) : hint;
+
+  return {
+    ...declared,
+    sideEffect: effective.effect,
+    confirm: effective.confirmation === 'required',
+    simulated: provenance ? provenance.simulated : true,
   };
 }
 

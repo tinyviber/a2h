@@ -1,0 +1,89 @@
+name: CI
+
+# The PR that introduced the protocol layer claimed "188 tests + 113 browser
+# acceptance, all green" — and every number in it was self-reported, because no
+# workflow existed. This is that claim made checkable.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # `tsc` is the first gate: a type error here means the boundary types
+      # (EffectPolicy, BlockContext, WorkspaceReader) stopped agreeing.
+      - run: npm run build
+
+      - run: npm test
+
+  acceptance:
+    name: browser acceptance (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ws: test/fixtures/mixed
+            profile: mixed
+          - ws: examples/radar
+            profile: radar
+          - ws: examples/coding-task
+            profile: coding
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # The acceptance driver launches a real Chrome through playwright-core
+      # (`executablePath`), so it needs one on PATH rather than a downloaded
+      # browser. The runner image ships Google Chrome stable.
+      - name: Locate Chrome
+        run: |
+          for candidate in "$(command -v google-chrome || true)" /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              echo "CHROME_PATH=$candidate" >> "$GITHUB_ENV"
+              "$candidate" --version
+              exit 0
+            fi
+          done
+          echo "no Chrome found on this runner" >&2
+          exit 1
+
+      - name: Run acceptance — ${{ matrix.profile }}
+        run: node test/acceptance.cjs --ws "${{ matrix.ws }}" --profile "${{ matrix.profile }}"
+
+      # Screenshots taken by the run, kept only when something failed.
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-${{ matrix.profile }}
+          path: outputs/acceptance
+          if-no-files-found: ignore

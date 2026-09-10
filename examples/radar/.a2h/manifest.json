@@ -107,7 +107,7 @@
       "label": "Open the candidates",
       "kind": "open",
       "taskId": "radar-daily",
-      "description": "Jump to the drafts. No state change.",
+      "description": "Jump to the drafts. Read-only: only the visit is recorded.",
       "sideEffect": "none",
       "confirm": false
     },

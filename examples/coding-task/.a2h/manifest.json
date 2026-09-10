@@ -96,7 +96,7 @@
       "kind": "open",
       "taskId": "apply-patch",
       "target": "patches/rate-limiter.diff",
-      "description": "Nothing changes. Open the patch first if you have not read it.",
+      "description": "Open the patch first if you have not read it. Nothing is applied.",
       "sideEffect": "none",
       "confirm": false
     },

@@ -1,6 +1,7 @@
 import type { Block } from '../types';
 import type { WorkspaceReader } from '../security/workspaceRead';
 import { renderMarkdown } from '../parsers/markdown';
+import { isSafeLinkHref } from '../security/urlPolicy';
 import { normalizeRel } from '../util/path';
 
 // Blocks authored by a producer arrive as plain JSON. This module turns them
@@ -59,7 +60,27 @@ function resolveBlock(block: Block, ctx: BlockContext): Block | undefined {
     };
   }
 
+  // Anything that will become an `<a href>` is normalised here, at the
+  // boundary, rather than trusted to the renderer: an unsafe scheme is stripped
+  // (the item keeps its title, it just stops being a link). The client applies
+  // the same policy again — same allowlist, two enforcement points.
+  if (block.type === 'list') {
+    return { ...record, type: 'list', items: sanitizeListItems(record.items) } as Block;
+  }
+
   return block;
+}
+
+function sanitizeListItems(items: unknown): unknown {
+  if (!Array.isArray(items)) return items;
+  return items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    const record = item as Record<string, unknown>;
+    if (record.href === undefined || isSafeLinkHref(record.href)) return record;
+    const clean = { ...record };
+    delete clean.href;
+    return clean;
+  });
 }
 
 function readBlockText(record: Record<string, unknown>, ctx: BlockContext): string | undefined {

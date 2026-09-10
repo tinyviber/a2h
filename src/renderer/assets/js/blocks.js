@@ -93,7 +93,7 @@ registerBlock('list', (block) => {
     if (!item || typeof item !== 'object') continue;
     const row = el('li', { class: 'block-list-item' }, [
       el('div', { class: 'block-list-head' }, [
-        item.href ? linkNode(item.href, item.title) : el('span', { class: 'block-list-title', text: item.title }),
+        item.href && isSafeHref(item.href) ? linkNode(item.href, item.title) : el('span', { class: 'block-list-title', text: item.title }),
         item.status ? statusPill(item.status) : null,
       ]),
       item.detail ? el('p', { class: 'block-list-detail', text: item.detail }) : null,
@@ -108,11 +108,32 @@ function linkNode(href, text) {
   return el('a', { class: 'block-list-title link', href: resolveHref(href), text: text });
 }
 
+// The same allowlist the server applies before this block is sent, applied
+// again on the way to the DOM. `javascript:`, `data:`, `file:`, `vbscript:`
+// and protocol-relative targets are not links here.
+const SAFE_HREF_SCHEME = /^(?:https?|mailto):/i;
+const HAS_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+export function isSafeHref(href) {
+  if (typeof href !== 'string') return false;
+  const value = href.trim();
+  if (value === '') return false;
+  if (value.startsWith('#')) return true;
+  if (value.startsWith('//')) return false;
+  if (HAS_SCHEME.test(value)) return SAFE_HREF_SCHEME.test(value);
+  return true;
+}
+
 /** A producer may write a workspace path; we route it as an artifact. */
 export function resolveHref(href) {
-  if (typeof href !== 'string' || href === '') return '#/';
-  if (href.startsWith('#') || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) return href;
-  return hrefFor('artifact', href);
+  if (typeof href !== 'string') return '#/';
+  const value = href.trim();
+  if (value === '') return '#/';
+  if (value.startsWith('#')) return value;
+  // An unsafe href loses its link rather than gaining a wrong one.
+  if (!isSafeHref(value)) return '#/';
+  if (HAS_SCHEME.test(value)) return value;
+  return hrefFor('artifact', value);
 }
 
 // ------------------------------------------------------------------- tables

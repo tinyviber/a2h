@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Workspace } from '../src/server/workspace';
 import { ActionEngine } from '../src/actions/engine';
+import { policyFromHint, strictestPolicy } from '../src/actions/policy';
 import { createDefaultRegistry } from '../src/providers/registry';
 import type { ActionExecutor } from '../src/providers/types';
 import { createRegistry, markSimulated } from '../src/providers/types';
@@ -305,6 +306,7 @@ describe('parameters are filtered against the declared schema', () => {
       id: 'spy',
       description: 'records its arguments',
       handles: () => true,
+      policy: () => ({ effect: 'state', confirmation: 'optional' }),
       execute: (_action, params) => {
         seen.push(params);
         return { message: 'recorded', simulated: true };
@@ -377,6 +379,7 @@ describe('provider seams', () => {
       id: 'broken',
       description: 'always throws',
       handles: () => true,
+      policy: () => ({ effect: 'state', confirmation: 'optional' }),
       execute: () => {
         throw new Error('boom');
       },
@@ -396,6 +399,7 @@ describe('provider seams', () => {
       id: 'async-broken',
       description: 'rejects',
       handles: () => true,
+      policy: () => ({ effect: 'state', confirmation: 'optional' }),
       execute: async () => {
         throw new Error('nope');
       },
@@ -407,7 +411,198 @@ describe('provider seams', () => {
   });
 
   it('flags the built-in executor as a simulation', () => {
-    expect(createDefaultRegistry().simulated).toBe(true);
+    expect(createDefaultRegistry().allSimulated).toBe(true);
+  });
+});
+
+describe('the executor, not the workspace, decides how dangerous an action is', () => {
+  // `sideEffect` in a manifest is written by untrusted input. The provider that
+  // will actually run the action states its own policy, and the two are merged
+  // with the stricter claim winning — so understating an action in the
+  // manifest buys nothing once a real executor owns it.
+
+  /** Stands in for a future WorkBuddy/Codex provider that really publishes. */
+  const publisher: ActionExecutor = {
+    id: 'publisher',
+    description: 'publishes for real',
+    handles: (action) => action.kind === 'publish',
+    policy: () => ({ effect: 'external', confirmation: 'required' }),
+    execute: (action) => ({ message: `published ${action.id}`, simulated: false }),
+  };
+
+  /** The workspace's lie: "this publish is a local state change". */
+  const UNDERSTATED = [
+    {
+      id: 'publish',
+      label: 'Publish',
+      kind: 'publish',
+      taskId: 't1',
+      sideEffect: 'state' as const,
+      confirm: false,
+      enabled: true,
+      simulated: false,
+    },
+  ];
+
+  function publishingEngine() {
+    return new ActionEngine({
+      rootDir: '/tmp',
+      registry: createRegistry([publisher]),
+    });
+  }
+
+  it('refuses an external effect the workspace described as state', async () => {
+    const e = publishingEngine();
+    const result = await e.execute({ id: 'publish' }, UNDERSTATED as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('confirmation_required');
+    expect(e.getRuntimeRuns()).toEqual([]);
+  });
+
+  it('runs it once the human confirms, and reports a real effect as real', async () => {
+    const e = publishingEngine();
+    const result = await e.execute({ id: 'publish', confirm: true }, UNDERSTATED as never);
+
+    expect(result.ok).toBe(true);
+    expect(result.simulated).toBe(false);
+    // The audit line records the effective policy and the real provenance.
+    expect(e.getAuditTrail()[0]).toMatchObject({
+      sideEffect: 'external',
+      simulated: false,
+      executor: 'publisher',
+    });
+  });
+
+  it('lets a workspace escalate but never relax', async () => {
+    // The mirror image: the provider says state, the workspace demands a
+    // confirmation. The stricter of the two wins, so the prompt survives.
+    const quiet: ActionExecutor = {
+      id: 'quiet',
+      description: 'changes local state only',
+      handles: () => true,
+      policy: () => ({ effect: 'state', confirmation: 'optional' }),
+      execute: () => ({ message: 'ok', simulated: true }),
+    };
+    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([quiet]) });
+    const declared = [
+      {
+        id: 'archive',
+        label: 'Archive',
+        kind: 'archive',
+        sideEffect: 'state' as const,
+        confirm: true,
+        enabled: true,
+        simulated: true,
+      },
+    ];
+
+    const refused = await e.execute({ id: 'archive' }, declared as never);
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toBe('confirmation_required');
+
+    const accepted = await e.execute({ id: 'archive', confirm: true }, declared as never);
+    expect(accepted.ok).toBe(true);
+  });
+
+  it('normalises external to "confirmation required" in the policy itself', () => {
+    expect(policyFromHint('external', false)).toEqual({
+      effect: 'external',
+      confirmation: 'required',
+    });
+    expect(strictestPolicy(policyFromHint('state', false), { effect: 'external', confirmation: 'optional' })).toEqual({
+      effect: 'external',
+      confirmation: 'required',
+    });
+  });
+
+  it('does not let the manifest lower the level through the presentation either', () => {
+    const root = makeWorkspace({
+      ...manifest({
+        a2h: 1,
+        actions: [{ id: 'publish', label: 'Publish', kind: 'publish', sideEffect: 'state', confirm: false }],
+      }),
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace({
+      rootDir: root,
+      registry: createDefaultRegistry({ extraExecutors: [publisher] }),
+    });
+
+    const action = ws.presentation.actions.find((a) => a.id === 'publish')!;
+    expect(action.sideEffect).toBe('external');
+    expect(action.confirm).toBe(true);
+    expect(action.simulated).toBe(false);
+  });
+});
+
+describe('simulation provenance is per action, not per workspace', () => {
+  const publisher: ActionExecutor = {
+    id: 'publisher',
+    description: 'publishes for real',
+    handles: (action) => action.kind === 'publish',
+    policy: () => ({ effect: 'external', confirmation: 'required' }),
+    execute: () => ({ message: 'published', simulated: false }),
+  };
+
+  function mixedWorkspace() {
+    const root = makeWorkspace({
+      ...manifest({
+        a2h: 1,
+        actions: [
+          { id: 'publish', label: 'Publish', kind: 'publish', sideEffect: 'external', confirm: true },
+          { id: 'approve', label: 'Approve', kind: 'approve', sideEffect: 'state', confirm: false },
+        ],
+      }),
+      'README.md': '# Hi\n',
+    });
+    return new Workspace({
+      rootDir: root,
+      registry: createDefaultRegistry({ extraExecutors: [publisher] }),
+    });
+  }
+
+  it('labels a real executor as real and the simulator as simulated — side by side', () => {
+    const ws = mixedWorkspace();
+    const byId = new Map(ws.presentation.actions.map((a) => [a.id, a]));
+
+    // A registry-wide boolean cannot express this: one action is real and the
+    // next one falls through to the simulator, in the same workspace.
+    expect(byId.get('publish')!.simulated).toBe(false);
+    expect(byId.get('approve')!.simulated).toBe(true);
+  });
+
+  it('still tells the human that some of what they can click is simulated', () => {
+    const ws = mixedWorkspace();
+    expect(ws.presentation.simulatedActions).toBe(true);
+    expect(ws.presentation.warnings.join(' ')).toMatch(/fall through to the built-in simulator/);
+  });
+
+  it('marks a simulation even when the executor claims a real effect', async () => {
+    const sneaky = markSimulated({
+      id: 'sneaky',
+      description: 'simulates but says otherwise',
+      handles: () => true,
+      policy: () => ({ effect: 'state', confirmation: 'optional' }),
+      execute: () => ({ message: 'done', simulated: false }),
+    });
+    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([sneaky]) });
+    const result = await e.execute({ id: 'approve' }, DECLARED as never);
+
+    expect(result.ok).toBe(true);
+    expect(result.simulated).toBe(true);
+    expect(e.getAuditTrail()[0]).toMatchObject({ simulated: true });
+  });
+
+  it('reports the executor that actually ran the action', async () => {
+    const e = new ActionEngine({
+      rootDir: '/tmp',
+      registry: createDefaultRegistry({ extraExecutors: [publisher] }),
+    });
+    await e.execute({ id: 'publish', confirm: true }, [
+      { id: 'publish', label: 'Publish', kind: 'publish', sideEffect: 'external', confirm: true, enabled: true, simulated: false },
+    ] as never);
+    expect(e.getAuditTrail()[0]!.executor).toBe('publisher');
   });
 });
 

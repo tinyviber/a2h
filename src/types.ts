@@ -448,6 +448,29 @@ export interface ActionParam {
   default?: string | boolean;
 }
 
+/**
+ * How far an action's effect reaches.
+ *
+ *   none     — navigation only; nothing changes
+ *   state    — changes state A2H can see
+ *   external — would leave this machine (send to an agent, publish, apply a diff)
+ *
+ * Two parties have an opinion about this: the workspace (which hints) and the
+ * executor that will actually run the action (which is authoritative). See
+ * `actions/policy.ts` for the merge — it can only ever raise the level.
+ */
+export type SideEffect = 'none' | 'state' | 'external';
+
+/**
+ * A provider's authoritative statement about one action: what it will do, and
+ * whether a human must confirm it first.
+ */
+export interface EffectPolicy {
+  effect: SideEffect;
+  /** 'required' means a human must confirm before the action runs. */
+  confirmation: 'required' | 'optional';
+}
+
 export interface ActionView {
   id: string;
   label: string;
@@ -456,13 +479,20 @@ export interface ActionView {
   taskId?: string;
   target?: string;
   description?: string;
-  /** How far the side effect reaches. Drives the confirmation boundary. */
-  sideEffect: 'none' | 'state' | 'external';
+  /**
+   * How far the side effect reaches — already merged with the executor's own
+   * policy, so this is the *effective* level rather than the workspace's claim.
+   */
+  sideEffect: SideEffect;
   /** Requires an explicit second confirmation before executing. */
   confirm: boolean;
   enabled: boolean;
   params?: ActionParam[];
-  /** True when execution is simulated by a mock provider. */
+  /**
+   * True when the executor that will run *this* action only simulates it.
+   * Per action, not per workspace: a real provider may own one action while
+   * the built-in simulator owns the next one.
+   */
   simulated: boolean;
 }
 
@@ -490,7 +520,12 @@ export interface Presentation {
   stats: { files: number; artifacts: number; ignored: number; bytes: number };
   /** 'explicit' when a manifest shaped the view; 'inferred' for zero-config. */
   semantics: SemanticsOrigin;
-  /** True when actions are backed by a mock executor rather than a real agent. */
+  /**
+   * True when at least one declared action will be simulated by its executor.
+   * Deliberately not "all": a workspace may hand one action to a real provider
+   * and let the next fall through to the built-in simulator. Read the per-action
+   * `ActionView.simulated` for anything the human is about to click.
+   */
   simulatedActions: boolean;
   highlights: ArtifactView[];
   sections: SectionView[];

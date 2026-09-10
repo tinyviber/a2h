@@ -27,6 +27,8 @@ export { createA2hServer, findAssetsDir } from './server/server';
 export { resolveRelPath, resolveRealPath, isWithin } from './security/boundary';
 export { createWorkspaceReader } from './security/workspaceRead';
 export type { WorkspaceReader } from './security/workspaceRead';
+// One URL policy for markdown, blocks and anything that becomes an href.
+export { isSafeLinkHref, isWorkspaceRelative } from './security/urlPolicy';
 
 // Content
 export { renderContent } from './renderer/content';

@@ -7,6 +7,7 @@ import type {
   RunView,
 } from '../types';
 import type { ProviderRegistry } from '../providers/types';
+import { policyFromHint, strictestPolicy } from './policy';
 
 // ---------------------------------------------------------------------------
 // Action engine — the security boundary between the browser and anything with
@@ -21,10 +22,11 @@ import type { ProviderRegistry } from '../providers/types';
 //      that is not legal for its declared type is refused. Nothing is
 //      interpolated into a shell or used as a path.
 //   3. An effect that reaches beyond A2H's own state requires an explicit
-//      second confirmation from the human. This one is decided here, not by
-//      the manifest: the workspace is untrusted input, and an untrusted input
-//      does not get to set the confirmation policy. A manifest can demand
-//      confirmation; it cannot waive it.
+//      second confirmation from the human. This is decided here, from two
+//      claims — the workspace's and the executor's — merged with the stricter
+//      winning. Neither is trusted on its own: the manifest is untrusted
+//      input, and it is the executor's declared policy that a workspace cannot
+//      talk down.
 //   4. Execution is delegated to a registered executor. The built-in executor
 //      only simulates state changes, so nothing dangerous can happen by
 //      default — but the protocol and the UI flow are fully exercised.
@@ -109,19 +111,10 @@ export class ActionEngine {
       return this.fail(action.id, 'missing_params', `Missing required input: ${missing.join(', ')}.`);
     }
 
-    // The hard boundary. `external` is not the manifest's call to make, so the
-    // rule is re-stated here rather than read off `action.confirm` alone.
-    const mustConfirm = action.sideEffect === 'external' || action.confirm;
-    if (mustConfirm && request.confirm !== true) {
-      return this.fail(
-        action.id,
-        'confirmation_required',
-        `"${action.label}" has a ${action.sideEffect} side effect and needs confirmation.`,
-      );
-    }
-
-    const executor = this.registry.findExecutor(action);
-    if (!executor) {
+    // Who runs this, and what they say it will do. Asked before the
+    // confirmation check, because the answer is half of that decision.
+    const resolution = this.registry.resolve(action);
+    if (!resolution) {
       return this.fail(
         action.id,
         'no_executor',
@@ -129,22 +122,46 @@ export class ActionEngine {
       );
     }
 
+    // The hard boundary, recomputed from both claims rather than read off the
+    // incoming view: the workspace may escalate the level, the executor may
+    // escalate it, and the merge takes the higher one. A forged ActionView
+    // therefore cannot de-escalate anything either.
+    const policy = strictestPolicy(
+      policyFromHint(action.sideEffect, action.confirm),
+      resolution.policy,
+    );
+    if (policy.confirmation === 'required' && request.confirm !== true) {
+      return this.fail(
+        action.id,
+        'confirmation_required',
+        `"${action.label}" has a ${policy.effect} side effect and needs confirmation.`,
+        resolution.executor.id,
+        policy.effect,
+      );
+    }
+
     this.seq += 1;
     const runId = `run-${this.seq}-${slug(action.kind)}`;
 
     try {
-      const outcome = await executor.execute(action, params, {
+      const outcome = await resolution.executor.execute(action, params, {
         workspaceRoot: this.rootDir,
         runId,
         now: this.now(),
       });
+
+      // Provenance is the registry's answer OR the executor's, never the
+      // executor's alone: a simulator that forgets to label its output, or a
+      // provider that claims a real effect it did not have, both end up
+      // reported as simulated rather than the reverse.
+      const simulated = resolution.simulated || outcome.simulated === true;
 
       const run: RunView | undefined = outcome.run
         ? {
             ...outcome.run,
             id: outcome.run.id ?? runId,
             taskId: action.taskId,
-            simulated: outcome.simulated,
+            simulated,
           }
         : undefined;
 
@@ -162,18 +179,18 @@ export class ActionEngine {
         at: this.now().toISOString(),
         actionId: action.id,
         kind: action.kind,
-        sideEffect: action.sideEffect,
+        sideEffect: policy.effect,
         ok: true,
-        simulated: outcome.simulated,
+        simulated,
         message: outcome.message,
-        executor: executor.id,
+        executor: resolution.executor.id,
       });
 
       return {
         ok: true,
         actionId: action.id,
         message: outcome.message,
-        simulated: outcome.simulated,
+        simulated,
         run,
         task:
           action.taskId && outcome.taskStatus
@@ -181,8 +198,8 @@ export class ActionEngine {
             : undefined,
       };
     } catch (err) {
-      const message = `Executor "${executor.id}" failed: ${(err as Error).message}`;
-      return this.fail(action.id, 'executor_failed', message, executor.id);
+      const message = `Executor "${resolution.executor.id}" failed: ${(err as Error).message}`;
+      return this.fail(action.id, 'executor_failed', message, resolution.executor.id, policy.effect);
     }
   }
 
@@ -198,12 +215,13 @@ export class ActionEngine {
     error: string,
     message: string,
     executor = 'none',
+    sideEffect = 'none',
   ): ActionResult {
     this.record({
       at: this.now().toISOString(),
       actionId,
       kind: 'n/a',
-      sideEffect: 'none',
+      sideEffect,
       ok: false,
       simulated: false,
       message,

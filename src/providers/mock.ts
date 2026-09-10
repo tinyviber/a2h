@@ -129,6 +129,20 @@ export function createMockExecutor(): ActionExecutor {
       return true;
     },
 
+    policy() {
+      // The honest answer for this executor, not a guess about the action: the
+      // mock changes A2H's own in-memory state and nothing else. No network,
+      // no shell, no writes.
+      //
+      // Note what this is *not*: a defence against a workspace that understates
+      // an action. A workspace can declare `sideEffect: "state"` for a publish
+      // and the mock will agree, because the mock really does nothing — there
+      // is no harm to prevent. The defence is that a *real* provider states its
+      // own policy and the merge takes the stricter of the two, so the same
+      // lie is caught the moment a provider that publishes is registered.
+      return { effect: 'state', confirmation: 'optional' };
+    },
+
     execute(
       action: ActionView,
       params: Record<string, string> | undefined,

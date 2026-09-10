@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+import { isSafeLinkHref, isWorkspaceRelative } from '../security/urlPolicy';
 
 // Markdown rendering is deliberately conservative:
 //   - raw HTML is escaped, never executed (`html: false`)
@@ -7,16 +8,11 @@ import MarkdownIt from 'markdown-it';
 // The resolver is supplied by the content layer, which validates that the
 // target file really exists inside the workspace before producing a URL.
 
-const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
-
-export function isSafeUrl(url: string): boolean {
-  const trimmed = url.trim();
-  if (!trimmed) return false;
-  // Relative / anchor / protocol-relative — allow.
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return true;
-  const scheme = trimmed.slice(0, trimmed.indexOf(':') + 1).toLowerCase();
-  return SAFE_PROTOCOLS.has(scheme);
-}
+/**
+ * The workspace's single URL policy, shared with the block renderer so a
+ * producer cannot get a laxer answer out of one path than the other.
+ */
+export const isSafeUrl = isSafeLinkHref;
 
 export type ImageResolver = (src: string) => string | undefined;
 
@@ -37,7 +33,11 @@ export function renderMarkdown(mdText: string, resolveImage?: ImageResolver): st
       if (srcIdx < 0) return defaultImage ? defaultImage(tokens, idx, options, env, self) : '';
       const rawSrc = token.attrs![srcIdx]![1] as string;
 
-      if (isSafeUrl(rawSrc) && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(rawSrc)) {
+      // Only a plain workspace-relative src is rewritten. Anything with a
+      // scheme, and anything protocol-relative, is left to the default rule —
+      // which the page's `img-src 'self' data:` then refuses to load, so a
+      // workspace cannot make the viewer fetch a remote pixel.
+      if (isWorkspaceRelative(rawSrc)) {
         const resolved = resolveImage(rawSrc);
         if (resolved) {
           token.attrs![srcIdx]![1] = resolved;

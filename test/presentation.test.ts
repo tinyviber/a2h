@@ -186,6 +186,60 @@ describe('groups become the sections a human reads', () => {
   });
 });
 
+describe('a group may not collide with a built-in section id', () => {
+  // `inferSections` names sections after the built-in kinds, and a producer may
+  // declare a group with any id at all. Both can produce `reports`, and two
+  // sections with one id make every downstream `find()` arbitrary — the router
+  // reaches one of them and the other is unreachable.
+
+  const COLLIDING = {
+    a2h: 1,
+    groups: [{ id: 'reports', title: 'Quarterly reports' }],
+    items: [{ path: 'q3.md', group: 'reports' }],
+  };
+
+  function collidingWorkspace() {
+    return ws({
+      ...manifest(COLLIDING),
+      'q3.md': '# Q3\n',
+      'plan.md': '# Plan\n', // ungrouped markdown: infers a `reports` section
+    });
+  }
+
+  it('produces exactly one section for the id', () => {
+    const w = collidingWorkspace();
+    const ids = w.presentation.sections.map((s) => s.id);
+    expect(ids.filter((id) => id === 'reports')).toHaveLength(1);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('keeps the producer title and folds the inferred artifacts in', () => {
+    const w = collidingWorkspace();
+    const reports = w.presentation.sections.find((s) => s.id === 'reports')!;
+    expect(reports.title).toBe('Quarterly reports');
+    expect(reports.explicit).toBe(true);
+    expect(reports.artifacts.map((a) => a.id).sort()).toEqual(['plan.md', 'q3.md']);
+  });
+
+  it('tells the producer their id shadowed a built-in section', () => {
+    expect(collidingWorkspace().presentation.warnings.join(' ')).toMatch(
+      /group "reports" has the same id as a built-in section/,
+    );
+  });
+
+  it('leaves a group whose id matches nothing alone', () => {
+    const w = ws({
+      ...manifest({ a2h: 1, groups: [{ id: 'sources', title: 'Sources' }], items: [{ path: 'a.md', group: 'sources' }] }),
+      'a.md': '# A\n',
+      'loose.md': '# Loose\n',
+    });
+    const ids = w.presentation.sections.map((s) => s.id);
+    expect(ids).toContain('sources');
+    expect(ids).toContain('reports');
+    expect(w.presentation.warnings.join(' ')).not.toMatch(/has the same id/);
+  });
+});
+
 describe('blocks written by a producer', () => {
   it('compiles a markdown block written as literal text', () => {
     const w = ws({

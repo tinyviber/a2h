@@ -1,4 +1,4 @@
-import type { Block, Metric, Relation, TaskStatus } from '../types';
+import type { Block, Metric, Relation, SideEffect, TaskStatus } from '../types';
 
 // ---------------------------------------------------------------------------
 // The A2H producer protocol.
@@ -94,8 +94,13 @@ export interface ActionSpec {
    * 'state'  — changes A2H-visible state only
    * 'external' — would leave A2H (send to agent, publish, apply diff)
    * Defaults to 'state', the conservative middle ground.
+   *
+   * This is a *hint*. The executor that will run the action states the
+   * authoritative policy, and the two are merged with the stricter one
+   * winning — a workspace can escalate, never relax.
    */
-  sideEffect?: 'none' | 'state' | 'external';
+  sideEffect?: SideEffect;
+  /** Ask for confirmation even when the effective policy would not require it. */
   confirm?: boolean;
   params?: ActionParamSpec[];
   /** Set false to render the action as unavailable. */

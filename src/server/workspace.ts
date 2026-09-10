@@ -201,8 +201,11 @@ export class Workspace {
       .map((f) => f.path);
 
     const loaded = loadSemantics(this.rootDir, { markdownPaths });
+    // Who runs each action — and therefore whether it is simulated and what it
+    // is allowed to do without confirmation — is the provider layer's answer,
+    // not the workspace's. The registry is consulted per action.
     const semantics = resolveSemantics(loaded, {
-      simulatedActions: this.registry.simulated,
+      resolveAction: (action) => this.registry.resolve(action),
     });
     this.semantics = semantics;
 
