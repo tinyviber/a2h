@@ -1,0 +1,3 @@
+Some plain text notes without a markdown extension.
+
+Line two.

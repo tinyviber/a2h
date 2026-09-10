@@ -1,0 +1,40 @@
+{
+  "name": "a2h",
+  "version": "0.1.0",
+  "description": "Agent to Human — turn messy agent workspaces into structured, human-readable local web interfaces.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "a2h": "bin/a2h.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.js",
+    "dev": "node scripts/copy-assets.js && node bin/a2h.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:acceptance": "node test/acceptance.cjs",
+    "fixtures": "node test/fixtures/generate.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "diff": "^7.0.0",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.10.0",
+    "playwright-core": "^1.49.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>A2H</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app" id="app">
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+    </button>
+    <div class="scrim" id="scrim" hidden></div>
+
+    <aside class="sidebar" id="sidebar" aria-label="Navigation">
+      <div class="sidebar-inner">
+        <a class="brand" href="#" data-route="overview" id="brand">
+          <span class="brand-mark">A2H</span>
+          <span class="brand-sub">Agent&nbsp;to&nbsp;Human</span>
+        </a>
+        <nav class="nav" id="nav" aria-label="Sections"></nav>
+        <div class="sidebar-foot" id="sidebarFoot"></div>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="content" id="content" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

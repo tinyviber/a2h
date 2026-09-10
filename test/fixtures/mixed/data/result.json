@@ -1,0 +1,8 @@
+{
+  "project": "mixed",
+  "results": [
+    { "id": 1, "ok": true },
+    { "id": 2, "ok": false }
+  ],
+  "count": 2
+}
