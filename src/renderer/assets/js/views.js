@@ -253,9 +253,9 @@ export function actionsView() {
     wrap.appendChild(spacer(16));
   }
 
-  wrap.appendChild(sectionHead('Session audit', null));
+  wrap.appendChild(sectionHead('Action audit', null));
   wrap.appendChild(
-    el('p', { class: 'section-desc', text: 'Actions taken since this viewer started. Nothing is written to disk.' }),
+    el('p', { class: 'section-desc', text: 'This session, newest first, then the decisions recorded on disk under .a2h/decisions/.' }),
   );
   wrap.appendChild(el('div', { class: 'artifact-body' }, [renderAudit(data.audit)]));
   return wrap;

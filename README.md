@@ -112,6 +112,21 @@ So a producer may invent roles such as `spec`, `evidence`, `decision`, `signal`,
 
 When signals conflict, A2H prefers explicit semantics and falls back progressively to conventions and inference.
 
+### For agents
+
+If you are the agent writing the workspace, the normative field reference is
+[`docs/protocol.md`](docs/protocol.md). [`docs/agent-skill.md`](docs/agent-skill.md)
+covers the same ground as instructions — when to run `a2h init`, when to record
+a run, how to ask a human for a decision, and how to read `.a2h/decisions/`
+afterwards. A copy an agent runner can drop in place is at
+[`examples/agent-skill/SKILL.md`](examples/agent-skill/SKILL.md).
+
+Check a workspace before showing it to anyone:
+
+```bash
+npx @tinyviber/a2h validate .
+```
+
 ## Tasks, runs, presentation blocks, and actions
 
 The protocol can describe more than files. A workspace can expose:
@@ -153,6 +168,7 @@ See [`examples/coding-task`](examples/coding-task).
 ```text
 a2h [render] [path] [options]
 a2h init [path]
+a2h validate [path]
 ```
 
 Common options:

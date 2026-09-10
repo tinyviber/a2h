@@ -5,6 +5,7 @@ import { Workspace } from '../server/workspace';
 import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
 import { writeStarterManifest } from './init';
+import { printValidateReport, validateWorkspace } from './validate';
 
 const VERSION = '0.1.0';
 const DEFAULT_PORT = 8420;
@@ -39,7 +40,22 @@ export function main(argv: string[]): void {
     return;
   }
 
+  if (args.command === 'validate') {
+    runValidate(rootDir);
+    return;
+  }
+
   runRender(rootDir, args);
+}
+
+/**
+ * `a2h validate` is the one command that reports through its exit code, so a
+ * producer can wire it into a check. Warnings are allowed through (exit 0);
+ * only a claim that would mislead a human is an error.
+ */
+function runValidate(rootDir: string): void {
+  const report = validateWorkspace(rootDir);
+  process.exitCode = printValidateReport(report);
 }
 
 function runInit(rootDir: string, force: boolean): void {
@@ -210,6 +226,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (a === 'help') args.help = true;
     else if (a === 'init') args.command = 'init';
     else if (a === 'render') args.command = 'render';
+    else if (a === 'validate') args.command = 'validate';
     else if (!a.startsWith('-')) {
       args.path = a;
     }
@@ -226,11 +243,13 @@ Turn an agent workspace into a structured, human-readable local web surface.
 
 Usage:
   a2h [render] [path] [options]
-  a2h init [path]
+  a2h init <path>
+  a2h validate [path]
 
 Commands:
-  render <path>    Scan a workspace and start the local viewer (default)
-  init   <path>    Scaffold .a2h/manifest.json from the current workspace
+  render   <path>  Scan a workspace and start the local viewer (default)
+  init     <path>  Scaffold .a2h/manifest.json from the current workspace
+  validate <path>  Check the workspace against the producer protocol
   help             Show this help
 
 Options:
@@ -245,10 +264,15 @@ Producer protocol:
   .a2h/manifest.json (or a2h.json). With no manifest, A2H infers everything
   from conventions and file content — zero-config still works.
 
+  validate exits 1 only when the workspace claims something broken enough to
+  mislead a human (invalid manifest, a missing item path, an action id that
+  does not resolve, an unreadable decision file). Warnings — unknown roles,
+  unused actions, an inferred-only workspace — exit 0.
+
 Examples:
   npx a2h render
   npx a2h render ../a-coding-task --watch
-  npx a2h init . && npx a2h render .
+  npx a2h init . && npx a2h validate . && npx a2h render .
 `);
 }
 
