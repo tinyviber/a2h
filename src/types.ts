@@ -1,14 +1,25 @@
 // A2H core types.
 //
-// These types form the contract between the scanner, semantic IR builder,
-// presentation layer, content renderers, and the local server. They are
-// deliberately framework-free: nothing here imports React or any renderer.
+// These types form the contract between the scanner, semantics resolver,
+// semantic IR builder, presentation layer, content renderers, action
+// executors, and the local server. They are deliberately framework-free:
+// nothing here imports React or any renderer.
+//
+// The layering, in order:
+//
+//   filesystem
+//     -> scanner            (FileEntry: what bytes exist)
+//     -> semantics          (explicit manifest / frontmatter / conventions)
+//     -> semantic IR        (SemanticNode: what things mean)
+//     -> presentation IR    (Presentation: what a human should see, in order)
+//     -> renderer           (ArtifactContent + Block payloads)
+//     -> local web UI
 
 // ---------------------------------------------------------------------------
 // Scanner layer
 // ---------------------------------------------------------------------------
 
-/** Broad classification of a scanned file. */
+/** Broad classification of a scanned file. Extension-driven, least trusted. */
 export type FileKind =
   | 'markdown'
   | 'code'
@@ -18,6 +29,17 @@ export type FileKind =
   | 'image'
   | 'binary'
   | 'other';
+
+/**
+ * How a file's bytes should be drawn. Separate from `Role` on purpose: a role
+ * is what a thing *means* ("spec", "evidence", "draft"), a content kind is what
+ * it *is* ("markdown", "image"). A producer can call a PNG anything it likes and
+ * it will still be drawn as an image.
+ *
+ * Published on the view so a client can decide how to present an artifact
+ * without fetching it first.
+ */
+export type ContentKind = 'markdown' | 'code' | 'json' | 'log' | 'diff' | 'image' | 'file';
 
 export interface FileEntry {
   /** POSIX-style path relative to the workspace root, e.g. "outputs/a.md". */
@@ -68,7 +90,10 @@ export interface ScanResult {
 // Semantic IR
 // ---------------------------------------------------------------------------
 
-/** Semantic artifact kind (what a thing *means* to a human reader). */
+/**
+ * The built-in (inferred) roles. Producers may use any other string; A2H
+ * treats unknown roles as opaque labels and falls back to a generic card.
+ */
 export type ArtifactKind =
   | 'readme'
   | 'markdown'
@@ -80,15 +105,29 @@ export type ArtifactKind =
   | 'image'
   | 'file';
 
+/**
+ * An open role string. `ArtifactKind | (string & {})` keeps autocomplete for
+ * the built-ins while accepting producer-defined roles such as "signal" or
+ * "test-plan".
+ */
+export type Role = ArtifactKind | (string & {});
+
+/** How a node's semantics were established. Ordered by trust, highest first. */
+export type SemanticSource = 'explicit' | 'frontmatter' | 'convention' | 'heuristic';
+
 export interface ArtifactMeta {
   size: number;
   mtimeMs: number;
+  /** Lines in the file's own text. Never the number of files touched. */
   lineCount?: number;
+  /** Files touched by a diff. */
+  fileCount?: number;
   language?: string;
   imageWidth?: number;
   imageHeight?: number;
 }
 
+/** Built-in fallback sections. Explicit groups may use any string id. */
 export type SectionKind =
   | 'overview'
   | 'reports'
@@ -99,15 +138,42 @@ export type SectionKind =
   | 'code'
   | 'other';
 
+export type RelationKind =
+  | 'related'
+  | 'derived-from'
+  | 'supports'
+  | 'supersedes'
+  | 'produced-by';
+
+export interface Relation {
+  kind: RelationKind | (string & {});
+  /** Workspace-relative path or node id. */
+  target: string;
+  note?: string;
+}
+
+export interface Metric {
+  label: string;
+  value: string | number;
+  unit?: string;
+  delta?: string;
+  tone?: Tone;
+}
+
+export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
+
 export interface SemanticNode {
   /**
    * Stable id. For artifacts this is the workspace-relative path (unique).
-   * For sections it is a fixed slug such as "reports".
+   * For sections it is a slug such as "reports".
    */
   id: string;
-  type: 'workspace' | 'section' | 'artifact';
+  type: 'workspace' | 'section' | 'group' | 'artifact';
   title: string;
-  kind?: ArtifactKind;
+  /** Open semantic role. */
+  kind?: Role;
+  /** How the bytes will be drawn, independent of the role. */
+  content?: ContentKind;
   /** Workspace-relative path (artifacts only). */
   path?: string;
   summary?: string;
@@ -116,6 +182,24 @@ export interface SemanticNode {
   meta?: ArtifactMeta;
   /** Short human tags, e.g. "final", "latest", "stale". */
   tags?: string[];
+  /** Where the semantics came from. */
+  source?: SemanticSource;
+  /** Producer-declared group id (falls back to the derived section). */
+  group?: string;
+  /** Owning task id, when the producer declared one. */
+  taskId?: string;
+  /** Explicit relations to other artifacts. */
+  relations?: Relation[];
+  /** Producer-declared metrics. */
+  metrics?: Metric[];
+  /** Producer-authored presentation blocks for this artifact. */
+  blocks?: Block[];
+  /**
+   * Which inferred section this artifact belongs to when no producer group
+   * claims it. Derived from the role if it is a built-in one, otherwise from
+   * the file's actual kind — so a producer role never loses basic placement.
+   */
+  fallbackSection?: SectionKind;
   children: SemanticNode[];
 }
 
@@ -125,40 +209,311 @@ export interface SemanticIR {
   identity: WorkspaceIdentity;
   git: GitInfo;
   stats: { files: number; artifacts: number; ignored: number; bytes: number };
+  /** Which semantics layer actually shaped this IR. */
+  semantics: SemanticsOrigin;
   root: SemanticNode;
   warnings: string[];
 }
 
+export type SemanticsOrigin = 'explicit' | 'mixed' | 'inferred';
+
 // ---------------------------------------------------------------------------
-// Presentation tree
+// Presentation IR
 // ---------------------------------------------------------------------------
+
+/**
+ * Presentation blocks. These are the units the renderer knows how to draw.
+ * A producer can author any of them in the manifest; A2H also synthesises
+ * some from the task/run/action model.
+ *
+ * `type` is an open string so new block kinds can be added without touching
+ * this union's consumers — the client keeps a renderer registry.
+ */
+export interface TextBlock {
+  type: 'text';
+  id?: string;
+  title?: string;
+  text: string;
+  tone?: Tone;
+}
+
+export interface MarkdownBlock {
+  type: 'markdown';
+  id?: string;
+  title?: string;
+  /**
+   * Server-rendered HTML. Producers never set this — they supply `text` or
+   * `path` and the presentation layer compiles it with the same conservative
+   * renderer used for artifact content.
+   */
+  html?: string;
+  /** Literal markdown source. */
+  text?: string;
+  /** Workspace-relative file to read the markdown from. */
+  path?: string;
+}
+
+export interface ListItem {
+  title: string;
+  detail?: string;
+  href?: string;
+  status?: TaskStatus | (string & {});
+  meta?: string;
+}
+
+export interface ListBlock {
+  type: 'list';
+  id?: string;
+  title?: string;
+  items: ListItem[];
+  ordered?: boolean;
+}
+
+export interface TableBlock {
+  type: 'table';
+  id?: string;
+  title?: string;
+  columns: { key: string; label: string; align?: 'left' | 'right' }[];
+  rows: Record<string, string>[];
+  note?: string;
+}
+
+export interface ComparisonOption {
+  title: string;
+  summary?: string;
+  facts: { label: string; value: string }[];
+  tone?: Tone;
+}
+
+export interface ComparisonBlock {
+  type: 'comparison';
+  id?: string;
+  title?: string;
+  options: ComparisonOption[];
+  conclusion?: string;
+}
+
+export interface MetricsBlock {
+  type: 'metrics';
+  id?: string;
+  title?: string;
+  items: Metric[];
+}
+
+export interface TimelineItem {
+  at?: string;
+  title: string;
+  detail?: string;
+  status?: TaskStatus | (string & {});
+}
+
+export interface TimelineBlock {
+  type: 'timeline';
+  id?: string;
+  title?: string;
+  items: TimelineItem[];
+}
+
+export interface StatusBlock {
+  type: 'status';
+  id?: string;
+  title?: string;
+  status: TaskStatus | (string & {});
+  detail?: string;
+}
+
+export interface KeyValueBlock {
+  type: 'keyvalue';
+  id?: string;
+  title?: string;
+  items: { key: string; value: string; mono?: boolean }[];
+}
+
+export interface NoticeBlock {
+  type: 'notice';
+  id?: string;
+  title?: string;
+  text: string;
+  tone?: 'info' | 'warn' | 'error';
+}
+
+export interface ActionsBlock {
+  type: 'actions';
+  id?: string;
+  title?: string;
+  /** Action ids, resolved against the workspace action registry. */
+  ids: string[];
+}
+
+export type Block =
+  | TextBlock
+  | MarkdownBlock
+  | ListBlock
+  | TableBlock
+  | ComparisonBlock
+  | MetricsBlock
+  | TimelineBlock
+  | StatusBlock
+  | KeyValueBlock
+  | NoticeBlock
+  | ActionsBlock
+  // Open for extension: producers/tests may emit other shapes.
+  | { type: string; id?: string; title?: string; [key: string]: unknown };
 
 export interface ArtifactView {
   id: string;
   title: string;
-  kind: ArtifactKind;
+  kind: Role;
+  /** How this artifact's bytes will be drawn. Lets the client pick a renderer. */
+  content: ContentKind;
   path?: string;
   summary?: string;
   meta?: ArtifactMeta;
   tags?: string[];
   priority: number;
+  source?: SemanticSource;
+  /**
+   * The producer-declared group, when there was one. The section an artifact
+   * appears in is its *home*; the group is the producer's own labelling, which
+   * matters when a section holds more than one group or on a task page.
+   */
+  group?: string;
+  taskId?: string;
+  relations?: Relation[];
+  metrics?: Metric[];
+}
+
+export interface GroupView {
+  id: string;
+  title: string;
+  description?: string;
+  artifacts: ArtifactView[];
+  taskId?: string;
 }
 
 export interface SectionView {
   id: string;
   title: string;
-  kind: SectionKind;
+  kind: SectionKind | (string & {});
   description?: string;
   artifacts: ArtifactView[];
+  /** True when the section came from a producer-declared group. */
+  explicit?: boolean;
+}
+
+// ---- Task / Run / Action --------------------------------------------------
+
+export type TaskStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'partial'
+  | 'blocked'
+  | 'cancelled'
+  | 'info';
+
+export interface RunStep {
+  id: string;
+  title: string;
+  status: TaskStatus | (string & {});
+  detail?: string;
+  at?: string;
+}
+
+export interface RunView {
+  id: string;
+  taskId?: string;
+  title: string;
+  status: TaskStatus | (string & {});
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  summary?: string;
+  /** Workspace-relative paths produced by this run. */
+  artifacts: string[];
+  steps?: RunStep[];
+  blocks?: Block[];
+  /** True when this run is real; false when produced by a mock provider. */
+  simulated?: boolean;
+}
+
+export interface ActionParam {
+  name: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'boolean';
+  required?: boolean;
+  options?: string[];
+  placeholder?: string;
+  default?: string | boolean;
+}
+
+export interface ActionView {
+  id: string;
+  label: string;
+  /** Open kind: approve / reject / retry / run / publish / open / discard … */
+  kind: string;
+  taskId?: string;
+  target?: string;
+  description?: string;
+  /** How far the side effect reaches. Drives the confirmation boundary. */
+  sideEffect: 'none' | 'state' | 'external';
+  /** Requires an explicit second confirmation before executing. */
+  confirm: boolean;
+  enabled: boolean;
+  params?: ActionParam[];
+  /** True when execution is simulated by a mock provider. */
+  simulated: boolean;
+}
+
+export interface TaskView {
+  id: string;
+  title: string;
+  status: TaskStatus | (string & {});
+  summary?: string;
+  group?: string;
+  owner?: string;
+  updatedAt?: string;
+  progress?: { done: number; total: number; label?: string };
+  metrics?: Metric[];
+  blocks?: Block[];
+  /** Artifact ids (workspace-relative paths) belonging to this task. */
+  artifacts: string[];
+  runs: RunView[];
+  actions: ActionView[];
+  source: SemanticSource;
 }
 
 export interface Presentation {
   identity: WorkspaceIdentity;
   git: GitInfo;
   stats: { files: number; artifacts: number; ignored: number; bytes: number };
+  /** 'explicit' when a manifest shaped the view; 'inferred' for zero-config. */
+  semantics: SemanticsOrigin;
+  /** True when actions are backed by a mock executor rather than a real agent. */
+  simulatedActions: boolean;
   highlights: ArtifactView[];
   sections: SectionView[];
+  tasks: TaskView[];
+  runs: RunView[];
+  actions: ActionView[];
+  /** Workspace-level composed blocks (the "panel"). */
+  panels: Block[];
+  /** Actions attempted in this session. In-memory only; nothing is persisted. */
+  audit: ActionAuditEntry[];
   warnings: string[];
+}
+
+/** One line of the session action trail. */
+export interface ActionAuditEntry {
+  at: string;
+  actionId: string;
+  kind: string;
+  sideEffect: string;
+  ok: boolean;
+  simulated: boolean;
+  message: string;
+  executor: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,10 +617,39 @@ export type ArtifactContent =
 export interface ArtifactPayload {
   id: string;
   title: string;
-  kind: ArtifactKind;
+  kind: Role;
   path?: string;
   summary?: string;
   meta?: ArtifactMeta;
   tags?: string[];
   content: ArtifactContent;
+  /** Producer-authored blocks, pre-resolved for rendering. */
+  blocks?: Block[];
+  relations?: Relation[];
+  taskId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Action execution (server -> client)
+// ---------------------------------------------------------------------------
+
+export interface ActionRequest {
+  id: string;
+  params?: Record<string, string>;
+  /** Set by the client after the user confirms a side-effecting action. */
+  confirm?: boolean;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  actionId: string;
+  /** Human-readable outcome line. */
+  message: string;
+  /** True when a mock provider produced this result. */
+  simulated: boolean;
+  /** Run created by the action, when the executor produced one. */
+  run?: RunView;
+  /** Task whose state changed, with its new status. */
+  task?: { id: string; status: string };
+  error?: string;
 }

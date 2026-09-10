@@ -16,12 +16,16 @@ const IGNORED_DIRS = new Set([
   '.yarn', '.pnpm-store',
   'vendor',
   '.idea', '.vscode', '.fleet',
+  // A2H protocol directory: it is read as semantics, never shown as content.
+  '.a2h',
 ]);
 
 const IGNORED_FILE_NAMES = new Set([
   '.DS_Store', 'Thumbs.db', 'desktop.ini',
   'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb',
   'Cargo.lock', 'Pipfile.lock', 'poetry.lock', 'go.sum',
+  // Reserved protocol name — consumed as the manifest, not rendered as data.
+  'a2h.json',
 ]);
 
 export function shouldIgnoreDir(name: string): { ignore: boolean; reason?: string } {

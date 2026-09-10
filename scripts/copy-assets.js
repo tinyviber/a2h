@@ -1,7 +1,10 @@
 'use strict';
 
-// Copies the renderer's static assets into the build output so the
-// compiled CLI can serve them at runtime without a separate frontend build.
+// Copies the renderer's static assets into the build output so the compiled
+// CLI can serve them at runtime without a separate frontend build.
+//
+// The viewer is plain ES modules (see src/renderer/assets/js/), so this is a
+// recursive copy — there is no bundling step to run.
 const fs = require('fs');
 const path = require('path');
 
@@ -14,14 +17,6 @@ if (!fs.existsSync(srcDir)) {
 }
 
 fs.rmSync(outDir, { recursive: true, force: true });
-fs.mkdirSync(outDir, { recursive: true });
-
-for (const entry of fs.readdirSync(srcDir)) {
-  const from = path.join(srcDir, entry);
-  const to = path.join(outDir, entry);
-  if (fs.statSync(from).isFile()) {
-    fs.copyFileSync(from, to);
-  }
-}
+fs.cpSync(srcDir, outDir, { recursive: true });
 
 console.log('[a2h] copied renderer assets to', outDir);

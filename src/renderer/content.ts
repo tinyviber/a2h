@@ -1,5 +1,6 @@
 import { openSync, readSync, closeSync } from 'node:fs';
-import type { ArtifactContent, ArtifactKind, FileEntry } from '../types';
+import type { ArtifactContent, ContentKind, FileEntry } from '../types';
+import { contentKindOf } from '../scanner/classify';
 import { renderMarkdown, splitFrontmatter } from '../parsers/markdown';
 import { parseDiff } from '../parsers/diff';
 import { parseJson } from '../parsers/json';
@@ -7,6 +8,11 @@ import { parseLog } from '../parsers/log';
 import { parseCode } from '../parsers/code';
 import { readFileText } from '../parsers/text';
 import { normalizeRel } from '../util/path';
+
+// Content rendering is driven by *what the bytes are*, never by the semantic
+// role a producer assigned. A file declared as role "draft" is still markdown;
+// a role is a label for humans, not a rendering instruction. This separation is
+// what lets producers invent roles freely without breaking the reader.
 
 export interface ContentContext {
   rootDir: string;
@@ -16,9 +22,12 @@ export interface ContentContext {
   fileUrl: (relPath: string) => string;
 }
 
+export function contentKindFor(entry: FileEntry): ContentKind {
+  return contentKindOf(entry.kind);
+}
+
 export function renderContent(
   entry: FileEntry,
-  kind: ArtifactKind,
   ctx: ContentContext,
   mode?: 'tail' | 'full',
 ): ArtifactContent {
@@ -26,31 +35,42 @@ export function renderContent(
     return { type: 'file', isBinary: false, note: 'Content hidden (sensitive file)' };
   }
 
-  switch (kind) {
-    case 'readme':
-    case 'markdown':
-    case 'report': {
-      const { text } = readFileText(entry.absolutePath, 2 * 1024 * 1024);
-      const { frontmatter, body } = splitFrontmatter(text);
-      const baseDir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
-      const html = renderMarkdown(body, (src) => resolveImage(src, baseDir, ctx));
-      return { type: 'markdown', html, frontmatter };
+  // Symlinks are never followed. A link whose name looks like markdown must not
+  // become a read primitive for files outside the workspace.
+  if (entry.isSymlink) {
+    return { type: 'file', isBinary: false, note: 'Symlink (not followed)' };
+  }
+
+  try {
+    switch (contentKindFor(entry)) {
+      case 'markdown': {
+        const { text } = readFileText(entry.absolutePath, 2 * 1024 * 1024);
+        const { frontmatter, body } = splitFrontmatter(text);
+        const baseDir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+        const html = renderMarkdown(body, (src) => resolveImage(src, baseDir, ctx));
+        return { type: 'markdown', html, frontmatter };
+      }
+      case 'diff': {
+        const { text } = readFileText(entry.absolutePath, 2 * 1024 * 1024);
+        return parseDiff(text);
+      }
+      case 'json':
+        return parseJson(entry.absolutePath);
+      case 'log':
+        return parseLog(entry.absolutePath, mode === 'full');
+      case 'code':
+        return parseCode(entry.absolutePath, entry.ext);
+      case 'image':
+        return { type: 'image', url: ctx.fileUrl(entry.path) };
+      case 'file':
+      default:
+        return renderFile(entry);
     }
-    case 'diff': {
-      const { text } = readFileText(entry.absolutePath, 2 * 1024 * 1024);
-      return parseDiff(text);
-    }
-    case 'json':
-      return parseJson(entry.absolutePath);
-    case 'log':
-      return parseLog(entry.absolutePath, mode === 'full');
-    case 'code':
-      return parseCode(entry.absolutePath, entry.ext);
-    case 'image':
-      return { type: 'image', url: ctx.fileUrl(entry.path) };
-    case 'file':
-    default:
-      return renderFile(entry);
+  } catch (err) {
+    return renderFileFallback(
+      entry,
+      `Could not render this file as ${contentKindFor(entry)} — showing raw text instead.`,
+    );
   }
 }
 
@@ -82,6 +102,19 @@ function renderFile(entry: FileEntry): ArtifactContent {
   }
   const { text, truncated } = readFileText(entry.absolutePath, 64 * 1024);
   return { type: 'file', isBinary: false, text, truncated };
+}
+
+/**
+ * Last-resort rendering. An artifact page must never fail because a file was
+ * stranger than expected — a malformed patch, a truncated image header, an
+ * encoding surprise. Better a plain text view with a note than an error.
+ */
+function renderFileFallback(entry: FileEntry, reason: string): ArtifactContent {
+  const { text, truncated } = readFileText(entry.absolutePath, 64 * 1024);
+  if (hasNullByte(Buffer.from(text.slice(0, 8192), 'utf8'))) {
+    return { type: 'file', isBinary: true, note: reason };
+  }
+  return { type: 'file', isBinary: false, text, truncated, note: reason };
 }
 
 function readBytes(path: string, max: number): Buffer {

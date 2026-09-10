@@ -1,0 +1,45 @@
+{
+  "runs": [
+    {
+      "id": "run-0910-cluster",
+      "taskId": "radar-daily",
+      "title": "Cluster and dedupe",
+      "status": "succeeded",
+      "startedAt": "2026-09-10T07:12:00Z",
+      "endedAt": "2026-09-10T07:31:00Z",
+      "summary": "Dropped 11 duplicates, formed 6 clusters, flagged 1 cluster as noise.",
+      "artifacts": ["processed/clusters.json", "processed/dedupe-report.md", "visuals/coverage.png"],
+      "steps": [
+        { "id": "s1", "title": "Normalize titles", "status": "succeeded" },
+        { "id": "s2", "title": "Drop duplicates", "status": "succeeded", "detail": "11 of 34" },
+        { "id": "s3", "title": "Cluster by event", "status": "succeeded", "detail": "6 clusters" },
+        { "id": "s4", "title": "Score cluster confidence", "status": "succeeded", "detail": "1 below threshold" }
+      ]
+    },
+    {
+      "id": "run-0910-draft",
+      "taskId": "radar-daily",
+      "title": "Draft candidates",
+      "status": "running",
+      "startedAt": "2026-09-10T09:38:00Z",
+      "summary": "Three drafts written. Stopped before publish, waiting on a human.",
+      "artifacts": [
+        "publish-candidates/draft-01-lattice-pricing.md",
+        "publish-candidates/draft-02-skiff-launch.md",
+        "publish-candidates/draft-03-noise.md"
+      ],
+      "steps": [
+        { "id": "s1", "title": "Select clusters above threshold", "status": "succeeded", "detail": "3 of 6" },
+        { "id": "s2", "title": "Write drafts", "status": "succeeded" },
+        { "id": "s3", "title": "Publish", "status": "blocked", "detail": "human decision required" }
+      ],
+      "blocks": [
+        {
+          "type": "notice",
+          "tone": "warn",
+          "text": "This run is still open. It will stay open until someone approves or rejects the drafts."
+        }
+      ]
+    }
+  ]
+}

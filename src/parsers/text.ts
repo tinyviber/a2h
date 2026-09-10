@@ -1,7 +1,13 @@
-import { openSync, readSync, closeSync, fstatSync } from 'node:fs';
+import { fstatSync, readSync, closeSync } from 'node:fs';
+import { openNoFollow } from '../util/safeRead';
 
 // Shared text-file reading helpers with hard size caps, so no single file can
-// blow up memory. Logs / code / json all route through these.
+// blow up memory. Logs / code / json / markdown all route through these.
+//
+// Every read here refuses to follow a symlink. These helpers are reached from
+// more than one entry point (artifact content, producer-authored blocks), so
+// the guarantee is enforced once, at the choke point, rather than at each call
+// site. A symlink fails the open and surfaces as "unreadable".
 
 export interface TextResult {
   text: string;
@@ -12,7 +18,7 @@ export interface TextResult {
 export function readFileText(path: string, maxBytes: number): TextResult {
   let fd;
   try {
-    fd = openSync(path, 'r');
+    fd = openNoFollow(path);
     const stat = fstatSync(fd);
     const totalBytes = stat.size;
     const toRead = Math.min(totalBytes, maxBytes);
@@ -46,7 +52,7 @@ export function splitLines(text: string): string[] {
 export function countLinesFull(path: string, maxBytes: number): LinesResult {
   let fd;
   try {
-    fd = openSync(path, 'r');
+    fd = openNoFollow(path);
     const stat = fstatSync(fd);
     const totalBytes = stat.size;
     const toScan = Math.min(totalBytes, maxBytes);
@@ -75,7 +81,7 @@ export function countLinesFull(path: string, maxBytes: number): LinesResult {
 export function readTailLines(path: string, count: number): LinesResult {
   let fd;
   try {
-    fd = openSync(path, 'r');
+    fd = openNoFollow(path);
     const stat = fstatSync(fd);
     const totalBytes = stat.size;
     // Read the final chunk; expand if we did not collect enough lines.

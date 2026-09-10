@@ -1,5 +1,6 @@
 import { basename } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { readHeadNoFollow } from '../util/safeRead';
 import type { FileEntry, WorkspaceIdentity } from '../types';
 
 // Derives a human-facing identity for the workspace without requiring a
@@ -22,12 +23,7 @@ function findReadme(files: FileEntry[]): FileEntry | undefined {
 }
 
 function readHead(absPath: string): string {
-  try {
-    const fd = readFileSync(absPath);
-    return fd.slice(0, MAX_READ_BYTES).toString('utf8');
-  } catch {
-    return '';
-  }
+  return readHeadNoFollow(absPath, MAX_READ_BYTES) ?? '';
 }
 
 interface Heading {

@@ -1,0 +1,215 @@
+{
+  "a2h": 1,
+  "name": "Signal Radar",
+  "summary": "A daily agent workflow that clusters noisy sources into publish candidates a human approves.",
+  "groups": [
+    { "id": "sources", "title": "Sources", "description": "Feed configuration and the ingest log.", "order": 0 },
+    { "id": "inbox", "title": "Inbox", "description": "Raw items, one file per arrival. Not yet judged.", "order": 1 },
+    { "id": "processed", "title": "Processed", "description": "Cluster assignment and noise analysis.", "order": 2 },
+    { "id": "candidates", "title": "Publish candidates", "description": "Drafts waiting on a human decision.", "order": 3 },
+    { "id": "runs", "title": "Run notes", "description": "Human-readable summaries of each run.", "order": 4 }
+  ],
+  "tasks": [
+    {
+      "id": "radar-daily",
+      "title": "Daily radar run — 2026-09-10",
+      "status": "running",
+      "summary": "Ingest finished, clustering finished, drafting three candidates. Paused before publish.",
+      "group": "runs",
+      "owner": "radar-agent",
+      "updatedAt": "2026-09-10T09:41:00Z",
+      "progress": { "done": 3, "total": 4, "label": "steps" },
+      "metrics": [
+        { "label": "items ingested", "value": 34 },
+        { "label": "clusters", "value": 6 },
+        { "label": "candidates", "value": 3, "tone": "info" },
+        { "label": "duplicates dropped", "value": 11 }
+      ],
+      "actions": ["retry-ingest", "open-candidates"],
+      "artifacts": [
+        "runs/daily-2026-09-10.md",
+        "sources/ingest.log",
+        "processed/clusters.json",
+        "processed/dedupe-report.md",
+        "visuals/coverage.png"
+      ]
+    },
+    {
+      "id": "review-candidates",
+      "title": "Review publish candidates",
+      "status": "blocked",
+      "summary": "Three drafts are ready. Publishing is gated on a human decision — the agent will not publish on its own.",
+      "group": "candidates",
+      "owner": "you",
+      "updatedAt": "2026-09-10T09:41:00Z",
+      "metrics": [
+        { "label": "awaiting", "value": 3, "tone": "warn" },
+        { "label": "oldest", "value": "6h" }
+      ],
+      "actions": ["approve-draft", "reject-draft", "send-to-agent"],
+      "artifacts": [
+        "publish-candidates/draft-01-lattice-pricing.md",
+        "publish-candidates/draft-02-skiff-launch.md",
+        "publish-candidates/draft-03-noise.md"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "approve-draft",
+      "label": "Approve draft",
+      "kind": "approve",
+      "taskId": "review-candidates",
+      "target": "publish-candidates/",
+      "description": "Mark a draft as approved and (in a real setup) hand it to the publishing step.",
+      "sideEffect": "external",
+      "confirm": true,
+      "params": [
+        {
+          "name": "draft",
+          "label": "Draft",
+          "type": "select",
+          "required": true,
+          "options": [
+            "draft-01-lattice-pricing.md",
+            "draft-02-skiff-launch.md",
+            "draft-03-noise.md"
+          ],
+          "default": "draft-01-lattice-pricing.md"
+        },
+        { "name": "note", "label": "Note for the record", "type": "text", "placeholder": "optional" }
+      ]
+    },
+    {
+      "id": "reject-draft",
+      "label": "Reject draft",
+      "kind": "reject",
+      "taskId": "review-candidates",
+      "description": "Close a draft without publishing it. Keeps the reason for the next run.",
+      "sideEffect": "state",
+      "confirm": true,
+      "params": [
+        { "name": "draft", "label": "Draft", "type": "select", "required": true, "options": ["draft-01-lattice-pricing.md", "draft-02-skiff-launch.md", "draft-03-noise.md"] },
+        { "name": "reason", "label": "Why not", "type": "textarea", "placeholder": "one line" }
+      ]
+    },
+    {
+      "id": "retry-ingest",
+      "label": "Re-run ingest",
+      "kind": "retry",
+      "taskId": "radar-daily",
+      "description": "Ask the pipeline to pull the feeds again after a change to sources/.",
+      "sideEffect": "state",
+      "confirm": false
+    },
+    {
+      "id": "open-candidates",
+      "label": "Open the candidates",
+      "kind": "open",
+      "taskId": "radar-daily",
+      "description": "Jump to the drafts. No state change.",
+      "sideEffect": "none",
+      "confirm": false
+    },
+    {
+      "id": "send-to-agent",
+      "label": "Send back to agent",
+      "kind": "send-to-agent",
+      "taskId": "review-candidates",
+      "description": "Hand feedback back to the radar agent and let it redraft.",
+      "sideEffect": "external",
+      "confirm": true,
+      "params": [
+        { "name": "draft", "label": "Draft", "type": "select", "required": true, "options": ["draft-01-lattice-pricing.md", "draft-02-skiff-launch.md", "draft-03-noise.md"] },
+        { "name": "feedback", "label": "Feedback", "type": "textarea", "required": true, "placeholder": "what should change?" }
+      ]
+    }
+  ],
+  "items": [
+    { "path": "sources/feed-list.json", "role": "config", "group": "sources", "priority": 420, "summary": "The feeds this radar reads. Edited by hand, not by the agent." },
+    { "path": "sources/ingest.log", "role": "log", "group": "sources", "priority": 300 },
+
+    { "path": "inbox/2026-09-10-lattice-pricing.md", "role": "signal", "group": "inbox", "priority": 380, "tags": ["unclustered"] },
+    { "path": "inbox/2026-09-10-skiff-launch.md", "role": "signal", "group": "inbox", "priority": 375, "tags": ["unclustered"] },
+    { "path": "inbox/2026-09-10-vendor-chatter.md", "role": "signal", "group": "inbox", "priority": 200, "tags": ["noise"], "summary": "Three low-signal posts about the same outage. Kept for the dedupe record." },
+
+    { "path": "processed/clusters.json", "role": "dataset", "group": "processed", "priority": 460, "summary": "Cluster → item mapping produced by the cluster step." },
+    { "path": "processed/dedupe-report.md", "role": "report", "group": "processed", "priority": 440 },
+
+    {
+      "path": "publish-candidates/draft-01-lattice-pricing.md",
+      "role": "draft",
+      "group": "candidates",
+      "priority": 900,
+      "taskId": "review-candidates",
+      "tags": ["final"],
+      "relations": [
+        { "kind": "derived-from", "target": "inbox/2026-09-10-lattice-pricing.md" },
+        { "kind": "supports", "target": "processed/clusters.json", "note": "cluster 2" }
+      ],
+      "blocks": [
+        {
+          "type": "comparison",
+          "title": "Why this draft, and not the other two",
+          "options": [
+            { "title": "Lattice pricing", "tone": "good", "summary": "Carries a number nobody else has published.", "facts": [{ "label": "Sources", "value": "3 independent" }, { "label": "Confidence", "value": "high" }] },
+            { "title": "Skiff launch", "tone": "warn", "summary": "Solid, but the launch window slips weekly.", "facts": [{ "label": "Sources", "value": "1 primary" }, { "label": "Confidence", "value": "medium" }] },
+            { "title": "Vendor chatter", "tone": "bad", "summary": "Noise. Same outage repeated three times.", "facts": [{ "label": "Sources", "value": "3, all derivative" }, { "label": "Confidence", "value": "low" }] }
+          ],
+          "conclusion": "Approve the first, hold the second, reject the third."
+        }
+      ]
+    },
+    { "path": "publish-candidates/draft-03-noise.md", "role": "draft", "group": "candidates", "priority": 300, "taskId": "review-candidates", "tags": ["draft", "noise"] },
+
+    { "path": "runs/daily-2026-09-10.md", "role": "run-note", "group": "runs", "priority": 520 },
+    { "path": "visuals/coverage.png", "role": "chart", "group": "runs", "priority": 340, "summary": "Share of items that survived dedupe, per feed." },
+
+    { "path": "patches/feed-list.diff", "role": "diff", "priority": 400, "summary": "Two feeds added after the slow ingest." }
+  ],
+  "panels": [
+    {
+      "type": "metrics",
+      "title": "Today at a glance",
+      "items": [
+        { "label": "items ingested", "value": 34 },
+        { "label": "after dedupe", "value": 23, "delta": "−11 duplicates" },
+        { "label": "clusters", "value": 6 },
+        { "label": "awaiting you", "value": 3, "tone": "warn" },
+        { "label": "next run", "value": "07:00", "tone": "neutral" }
+      ]
+    },
+    {
+      "type": "status",
+      "title": "Pipeline state",
+      "status": "partial",
+      "detail": "Ingest and clustering are done. Drafting finished three candidates. Publishing is stopped and waiting."
+    },
+    {
+      "type": "timeline",
+      "title": "This morning",
+      "items": [
+        { "at": "2026-09-10T07:00:00Z", "title": "Ingest", "detail": "34 items from 5 feeds, in 41s", "status": "succeeded" },
+        { "at": "2026-09-10T07:12:00Z", "title": "Dedupe", "detail": "11 duplicates dropped", "status": "succeeded" },
+        { "at": "2026-09-10T07:31:00Z", "title": "Cluster", "detail": "6 clusters formed", "status": "succeeded" },
+        { "at": "2026-09-10T09:41:00Z", "title": "Draft", "detail": "3 candidates written", "status": "succeeded" },
+        { "at": "2026-09-10T09:41:30Z", "title": "Publish", "detail": "blocked: needs a human decision", "status": "blocked" }
+      ]
+    },
+    {
+      "type": "keyvalue",
+      "title": "Pipeline",
+      "items": [
+        { "key": "agent", "value": "radar-agent v4 (simulated in this demo)" },
+        { "key": "schedule", "value": "daily, 07:00 local" },
+        { "key": "feeds", "value": "5 configured, 5 healthy" },
+        { "key": "manifest", "value": ".a2h/manifest.json", "mono": true }
+      ]
+    },
+    {
+      "type": "notice",
+      "tone": "info",
+      "text": "Publishing is deliberately gated on a human decision. The agent stops here rather than risking an unreviewed release."
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "a2h": 1,
+  "name": "Rate Limiter Task",
+  "summary": "A coding agent task: spec, implementation, tests, diff and the human decision that gates it.",
+  "groups": [
+    { "id": "spec", "title": "Spec", "description": "What was asked for.", "order": 0 },
+    { "id": "implementation", "title": "Implementation", "description": "What the agent wrote.", "order": 1 },
+    { "id": "tests", "title": "Tests", "description": "How it was checked.", "order": 2 },
+    { "id": "verification", "title": "What the run looked like", "description": "Screenshots captured by the agent, kept as evidence.", "order": 3 },
+    { "id": "change", "title": "The change", "description": "The patch under review.", "order": 4 },
+    { "id": "decisions", "title": "Decisions", "description": "What a human concluded, and why.", "order": 5 }
+  ],
+  "tasks": [
+    {
+      "id": "implement-limiter",
+      "title": "Implement the rate limiter",
+      "status": "succeeded",
+      "summary": "Token-bucket limiter written, tests pass, patch prepared for review.",
+      "owner": "coding-agent",
+      "updatedAt": "2026-09-09T16:20:00Z",
+      "progress": { "done": 4, "total": 4, "label": "steps" },
+      "metrics": [
+        { "label": "tests", "value": 9, "tone": "good" },
+        { "label": "coverage", "value": 94, "unit": "%" },
+        { "label": "files changed", "value": 2 }
+      ],
+      "actions": ["retry-tests", "discard-patch"],
+      "artifacts": [
+        "spec/rate-limiter.md",
+        "implementation/src/rate-limiter.ts",
+        "tests/rate-limiter.test.ts",
+        "screenshots/test-run.png",
+        "patches/rate-limiter.diff"
+      ]
+    },
+    {
+      "id": "apply-patch",
+      "title": "Apply the patch",
+      "status": "blocked",
+      "summary": "The patch is ready. Applying it to a working tree is not something the agent does on its own.",
+      "owner": "you",
+      "updatedAt": "2026-09-09T16:21:00Z",
+      "actions": ["apply-diff", "open-diff", "discard-patch"]
+    }
+  ],
+  "runs": [
+    {
+      "id": "run-0909-implement",
+      "taskId": "implement-limiter",
+      "title": "Write the limiter",
+      "status": "succeeded",
+      "startedAt": "2026-09-09T15:50:00Z",
+      "endedAt": "2026-09-09T16:14:00Z",
+      "summary": "Read the spec, wrote the implementation, wrote 9 tests. All pass on the first run.",
+      "artifacts": ["implementation/src/rate-limiter.ts", "tests/rate-limiter.test.ts", "screenshots/test-run.png", "runs/2026-09-09-implement.md"],
+      "steps": [
+        { "id": "s1", "title": "Read spec and record boundaries", "status": "succeeded" },
+        { "id": "s2", "title": "Write implementation", "status": "succeeded", "detail": "1 file, 88 lines" },
+        { "id": "s3", "title": "Write tests first", "status": "succeeded", "detail": "9 cases" },
+        { "id": "s4", "title": "Run the suite", "status": "succeeded", "detail": "9/9 pass" }
+      ]
+    },
+    {
+      "id": "run-0909-patch",
+      "taskId": "apply-patch",
+      "title": "Prepare the patch",
+      "status": "succeeded",
+      "startedAt": "2026-09-09T16:18:00Z",
+      "endedAt": "2026-09-09T16:20:00Z",
+      "summary": "Patch written to patches/rate-limiter.diff. Nothing applied — that needs a human.",
+      "artifacts": ["patches/rate-limiter.diff", "screenshots/coverage.png"],
+      "steps": [
+        { "id": "s1", "title": "Generate diff", "status": "succeeded", "detail": "2 files, +118 −3" },
+        { "id": "s2", "title": "Self-check against the spec", "status": "failed", "detail": "diff touches the middleware, which the spec excludes" },
+        { "id": "s3", "title": "Apply", "status": "blocked", "detail": "waiting on a human" }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "apply-diff",
+      "label": "Apply patch",
+      "kind": "apply-diff",
+      "taskId": "apply-patch",
+      "target": "patches/rate-limiter.diff",
+      "description": "Apply the reviewed change to the working tree.",
+      "sideEffect": "external",
+      "confirm": true,
+      "params": [
+        { "name": "target", "label": "Apply to", "type": "select", "required": true, "options": ["working tree", "new branch"], "default": "working tree" }
+      ]
+    },
+    {
+      "id": "open-diff",
+      "label": "Read the diff",
+      "kind": "open",
+      "taskId": "apply-patch",
+      "target": "patches/rate-limiter.diff",
+      "description": "Nothing changes. Open the patch first if you have not read it.",
+      "sideEffect": "none",
+      "confirm": false
+    },
+    {
+      "id": "discard-patch",
+      "label": "Discard the change",
+      "kind": "discard",
+      "taskId": "apply-patch",
+      "description": "Throw the patch away and close the task.",
+      "sideEffect": "state",
+      "confirm": true,
+      "params": [
+        { "name": "reason", "label": "Why", "type": "textarea", "placeholder": "one line, kept for the next attempt" }
+      ]
+    },
+    {
+      "id": "retry-tests",
+      "label": "Re-run the tests",
+      "kind": "retry",
+      "taskId": "implement-limiter",
+      "description": "Ask the agent to run the suite again.",
+      "sideEffect": "state",
+      "confirm": false
+    }
+  ],
+  "items": [
+    { "path": "spec/rate-limiter.md", "role": "spec", "group": "spec", "priority": 700, "tags": ["agreed"], "summary": "The agreed shape of the limiter, including what is out of scope." },
+    { "path": "implementation/src/rate-limiter.ts", "role": "implementation", "group": "implementation", "priority": 520 },
+    { "path": "tests/rate-limiter.test.ts", "role": "test", "group": "tests", "priority": 560, "summary": "9 cases: burst, refill, per-key isolation, clock skew." },
+    { "path": "review/decisions.md", "role": "decision", "group": "decisions", "priority": 820, "tags": ["final"] },
+    { "path": "patches/rate-limiter.diff", "role": "diff", "group": "change", "priority": 640, "taskId": "apply-patch" },
+    {
+      "path": "screenshots/test-run.png",
+      "role": "screenshot",
+      "group": "verification",
+      "priority": 600,
+      "taskId": "implement-limiter",
+      "summary": "The suite the agent ran: 9 cases, all passing on the first attempt.",
+      "tags": ["evidence"]
+    },
+    {
+      "path": "screenshots/coverage.png",
+      "role": "screenshot",
+      "group": "verification",
+      "priority": 580,
+      "taskId": "apply-patch",
+      "summary": "Coverage report. The uncovered branches are all in the middleware the spec excludes — the contradiction, made visible.",
+      "tags": ["evidence", "review"],
+      "relations": [
+        { "kind": "evidence-for", "target": "patches/rate-limiter.diff" }
+      ]
+    },
+    {
+      "path": "runs/2026-09-09-implement.md",
+      "role": "run-note",
+      "group": "decisions",
+      "priority": 480,
+      "relations": [
+        { "kind": "produced-by", "target": "implementation/src/rate-limiter.ts" }
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "type": "status",
+      "title": "Where this stands",
+      "status": "blocked",
+      "detail": "Implementation and tests are done. The change is waiting on a human decision to apply it."
+    },
+    {
+      "type": "list",
+      "title": "The change, in three lines",
+      "items": [
+        { "title": "Adds a token-bucket limiter", "detail": "One class, no dependencies, keyed by caller id.", "status": "succeeded" },
+        { "title": "Costs one Map per process", "detail": "No background timer; refill is computed on read.", "status": "succeeded" },
+        { "title": "Also wires the middleware", "detail": "The spec puts middleware wiring out of scope, but the patch includes it. This is the thing to check first.", "status": "warn" }
+      ]
+    },
+    {
+      "type": "notice",
+      "tone": "warn",
+      "text": "The patch and the spec disagree: spec/rate-limiter.md excludes middleware wiring, patches/rate-limiter.diff does it anyway. Whether that is scope creep or a helpful extra is a judgement call — which is exactly why this task is waiting on a human."
+    },
+    {
+      "type": "keyvalue",
+      "title": "Task facts",
+      "items": [
+        { "key": "agent", "value": "coding-agent (simulated in this demo)" },
+        { "key": "branch", "value": "feat/rate-limiter", "mono": true },
+        { "key": "files changed", "value": "2 (+118 −3)" },
+        { "key": "reviewer", "value": "unassigned" }
+      ]
+    }
+  ]
+}

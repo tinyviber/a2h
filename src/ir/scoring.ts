@@ -1,8 +1,10 @@
-import type { ArtifactKind, FileEntry } from '../types';
+import type { ArtifactKind, FileEntry, Role } from '../types';
 
 // Heuristic scoring: turns a file into a presentation priority plus a few
 // human tags. Deterministic — no model involved. The idea is to surface what
 // a human should read *first* in a messy agent workspace.
+//
+// This is the *fallback* path: a producer-declared priority always wins.
 
 const KIND_BASE: Record<ArtifactKind, number> = {
   readme: 1000,
@@ -15,6 +17,13 @@ const KIND_BASE: Record<ArtifactKind, number> = {
   code: 110,
   file: 60,
 };
+
+/**
+ * Producer-defined roles have no built-in base score. They are treated as
+ * "worth reading" — slightly above a plain note, well below an explicit
+ * report — and producers can always override with an explicit priority.
+ */
+const UNKNOWN_ROLE_BASE = 300;
 
 const HIGH_SIGNAL = [
   { re: /final/i, delta: 80 },
@@ -43,8 +52,8 @@ export interface Score {
   tags: string[];
 }
 
-export function scoreArtifact(kind: ArtifactKind, entry: FileEntry, nowMs: number): Score {
-  let priority = KIND_BASE[kind];
+export function scoreArtifact(kind: Role, entry: FileEntry, nowMs: number): Score {
+  let priority = KIND_BASE[kind as ArtifactKind] ?? UNKNOWN_ROLE_BASE;
   const tags: string[] = [];
 
   const name = entry.path.split('/').pop() ?? entry.path;
