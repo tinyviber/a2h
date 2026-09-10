@@ -534,8 +534,12 @@ export interface Presentation {
   actions: ActionView[];
   /** Workspace-level composed blocks (the "panel"). */
   panels: Block[];
-  /** Actions attempted in this session. In-memory only; nothing is persisted. */
-  audit: ActionAuditEntry[];
+  /**
+   * The action trail: attempts made in this session (newest first) followed by
+   * durable decision records read back from `.a2h/decisions/`, so a decision
+   * still shows after the viewer restarts.
+   */
+  audit: DecisionRecord[];
   warnings: string[];
 }
 
@@ -549,6 +553,26 @@ export interface ActionAuditEntry {
   simulated: boolean;
   message: string;
   executor: string;
+}
+
+/**
+ * A durable record of one action attempt, written under
+ * `.a2h/decisions/<utc>-<actionId>.json`.
+ *
+ * It is an audit trail, never an input: loading these can change what the
+ * viewer *shows* about the past, and can never grant an action authority or
+ * waive confirmation. The executor policy remains the only source of that.
+ */
+export interface DecisionRecord extends ActionAuditEntry {
+  /** Protocol version of the record itself. Absent is treated as 1. */
+  a2h?: number;
+  /**
+   * The parameters that were actually executed — already filtered against the
+   * action's declared schema, so undeclared keys are absent by construction.
+   */
+  params?: Record<string, string>;
+  /** Owning task id, when the action declared one. */
+  taskId?: string;
 }
 
 // ---------------------------------------------------------------------------

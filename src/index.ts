@@ -19,6 +19,12 @@ export { resolveBlocks } from './presentation/blocks';
 export { ActionEngine } from './actions/engine';
 export { createDefaultRegistry, createMockExecutor } from './providers/registry';
 export type { ActionExecutor, ProviderRegistry } from './providers/types';
+// The durable decision log: a writer (the engine uses it) and the file shape.
+export { writeDecisionRecord, decisionFileName, DECISIONS_DIR } from './actions/decisions';
+
+// CLI-reachable checks that are also useful programmatically.
+export { validateWorkspace } from './cli/validate';
+export type { ValidateReport } from './cli/validate';
 
 // Server
 export { Workspace } from './server/workspace';

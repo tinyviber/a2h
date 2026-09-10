@@ -25,7 +25,9 @@ import type { ProviderRegistry } from '../providers/types';
 // Two pieces of state deliberately survive a rescan:
 //   - the action engine (and its audit trail), because watch-mode rescans must
 //     not erase what the human just did;
-//   - nothing else. Everything derived from disk is rebuilt from scratch.
+//   - nothing else. Everything derived from disk is rebuilt from scratch —
+//     including `.a2h/decisions/`, which is why a decision outlives the
+//     process entirely rather than only the rescan.
 
 export interface WorkspaceOptions {
   rootDir: string;
@@ -217,7 +219,10 @@ export class Workspace {
       blockContext: this.blockContext(),
     });
 
-    this.base = presentation;
+    // Decision records are read from disk, so they belong on the disk-derived
+    // base: a restart with no session actions must still show what a human
+    // decided. The in-session trail is overlaid on top in applyRuntimeState.
+    this.base = { ...presentation, audit: loaded.decisions };
 
     // ---- indexes ----------------------------------------------------------
     this.filesByPath = new Map(scan.files.map((f) => [f.path, f]));
@@ -239,6 +244,12 @@ export class Workspace {
 
     if (runtimeRuns.length === 0 && audit.length === 0) return base;
 
+    // Once a rescan has re-read `.a2h/decisions/`, the session entry and its
+    // own durable record describe the same attempt. The in-memory copy wins
+    // and the echo is dropped, so the list is not doubled after every rescan.
+    const sessionKeys = new Set(audit.map((e) => `${e.at}|${e.actionId}`));
+    const durable = base.audit.filter((e) => !sessionKeys.has(`${e.at}|${e.actionId}`));
+
     const tasks = base.tasks.map((task) => {
       const overridden = this.engine.getTaskStatus(task.id);
       const own = runtimeRuns.filter((r) => r.taskId === task.id);
@@ -254,7 +265,7 @@ export class Workspace {
       ...base,
       tasks,
       runs: runtimeRuns.length ? [...runtimeRuns, ...base.runs] : base.runs,
-      audit,
+      audit: [...audit, ...durable],
     };
   }
 }

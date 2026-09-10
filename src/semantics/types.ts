@@ -1,4 +1,4 @@
-import type { Block, Metric, Relation, SideEffect, TaskStatus } from '../types';
+import type { Block, DecisionRecord, Metric, Relation, SideEffect, TaskStatus } from '../types';
 
 // ---------------------------------------------------------------------------
 // The A2H producer protocol.
@@ -174,6 +174,13 @@ export interface LoadedSemantics {
   manifest?: Manifest;
   /** Path the manifest was read from, relative to the root. */
   manifestPath?: string;
+  /**
+   * Set when a manifest candidate existed but could not be used — unreadable,
+   * unparseable, a symlink, out of the workspace, or too large. The loader
+   * still degrades to inference; this is the structured signal that a claimed
+   * protocol is broken, which `a2h validate` turns into an error.
+   */
+  manifestIssue?: string;
   taskSpecs: TaskSpec[];
   runSpecs: RunSpec[];
   actionSpecs: ActionSpec[];
@@ -181,6 +188,16 @@ export interface LoadedSemantics {
   groupSpecs: GroupSpec[];
   panels?: Block[];
   frontmatter: Map<string, FrontmatterSemantics>;
+  /**
+   * Durable decision records from `.a2h/decisions/`, newest first.
+   *
+   * Read for display only. Nothing here is ever consulted when deciding
+   * whether an action may run — a record attests to a past attempt, it does
+   * not grant authority.
+   */
+  decisions: DecisionRecord[];
+  /** Decision files that were present but refused, with the reason. */
+  decisionIssues: string[];
   name?: string;
   summary?: string;
   warnings: string[];
