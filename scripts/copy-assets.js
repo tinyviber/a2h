@@ -12,11 +12,11 @@ const srcDir = path.join(__dirname, '..', 'src', 'renderer', 'assets');
 const outDir = path.join(__dirname, '..', 'dist', 'renderer', 'assets');
 
 if (!fs.existsSync(srcDir)) {
-  console.error('[a2h] renderer assets not found:', srcDir);
+  console.error('[@tinyviber/a2h] renderer assets not found:', srcDir);
   process.exit(1);
 }
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.cpSync(srcDir, outDir, { recursive: true });
 
-console.log('[a2h] copied renderer assets to', outDir);
+console.log('[@tinyviber/a2h] copied renderer assets to', outDir);

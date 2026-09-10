@@ -6,7 +6,7 @@ import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
 import { writeStarterManifest } from './init';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const DEFAULT_PORT = 8420;
 
 interface ParsedArgs {
@@ -28,7 +28,7 @@ export function main(argv: string[]): void {
     return;
   }
   if (args.version) {
-    console.log(`a2h ${VERSION}`);
+    console.log(`@tinyviber/a2h ${VERSION}`);
     return;
   }
 
@@ -246,9 +246,9 @@ Producer protocol:
   from conventions and file content — zero-config still works.
 
 Examples:
-  npx a2h render
-  npx a2h render ../a-coding-task --watch
-  npx a2h init . && npx a2h render .
+  npx @tinyviber/a2h render
+  npx @tinyviber/a2h render ../a-coding-task --watch
+  npx @tinyviber/a2h init . && npx @tinyviber/a2h render .
 `);
 }
 
