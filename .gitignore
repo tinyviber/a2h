@@ -5,3 +5,15 @@ dist/
 coverage/
 outputs/
 .workbuddy/
+
+# Fixtures and demos are *inputs*, and some of them deliberately look like
+# build output: a demo workspace with a `logs/` directory, a fixture whose
+# report lands in `outputs/`. The rules above exclude exactly those shapes, so
+# a fresh clone used to be missing files the unit suite and the demos read —
+# green in a working tree that had them, red in CI. These negations restore
+# them without un-ignoring the repo's own `outputs/`.
+!test/fixtures/**/logs/
+!test/fixtures/**/outputs/
+!test/fixtures/**/*.log
+!examples/**/logs/
+!examples/**/*.log

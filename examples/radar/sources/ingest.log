@@ -1,0 +1,15 @@
+2026-09-10T07:00:00Z  info   radar v4 starting; root=.
+2026-09-10T07:00:00Z  info   loaded 5 feeds from sources/feed-list.json
+2026-09-10T07:00:02Z  info   GET lattice-blog 200 (18 items)
+2026-09-10T07:00:05Z  info   GET skiff-news 200 (9 items)
+2026-09-10T07:00:09Z  warn   GET model-tracker timeout after 4000ms; retrying
+2026-09-10T07:00:15Z  info   GET model-tracker 200 (5 items) on retry 1
+2026-09-10T07:00:18Z  info   GET vendor-watch 200 (2 items)
+2026-09-10T07:00:41Z  info   GET community-firehose 200 (3 items)
+2026-09-10T07:00:41Z  error  3 items from community-firehose failed schema validation; skipped
+2026-09-10T07:00:41Z  info   wrote 34 items to inbox/
+2026-09-10T07:00:41Z  info   trimmed 9 items older than 7 days
+2026-09-10T07:12:00Z  info   dedupe: 34 -> 23 items (11 dropped)
+2026-09-10T07:31:00Z  info   cluster: 6 clusters, 1 below confidence threshold
+2026-09-10T09:38:00Z  info   draft: 3 candidates written
+2026-09-10T09:41:30Z  warn   publish: awaiting human decision, holding 3 candidates
