@@ -17,3 +17,10 @@ outputs/
 !test/fixtures/**/*.log
 !examples/**/logs/
 !examples/**/*.log
+
+# `.a2h/decisions/` is written by the viewer at runtime, not an input. Running
+# the acceptance suite against `examples/radar` writes one, and committing that
+# would be exactly the fabricated audit trail the protocol tells producers not
+# to write. Real workspaces may still choose to commit their own.
+examples/**/.a2h/decisions/
+test/fixtures/**/.a2h/decisions/

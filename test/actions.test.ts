@@ -56,11 +56,22 @@ const DECLARED = [
 ];
 
 function engineWithNoExecutor() {
-  return new ActionEngine({ rootDir: '/tmp', registry: createRegistry([]) });
+  return new ActionEngine({ rootDir: root(), registry: createRegistry([]) });
 }
 
 function engine() {
-  return new ActionEngine({ rootDir: '/tmp', registry: createDefaultRegistry() });
+  return new ActionEngine({ rootDir: root(), registry: createDefaultRegistry() });
+}
+
+/**
+ * A real, throwaway workspace root.
+ *
+ * The engine files one decision record per attempt, so its root has to be a
+ * directory it may write to. A bare `/tmp` is not that: it is the shared system
+ * temp root, and a suite that litters it is a suite with a side effect.
+ */
+function root(): string {
+  return makeWorkspace({});
 }
 
 describe('the declared-action allowlist', () => {
@@ -312,7 +323,7 @@ describe('parameters are filtered against the declared schema', () => {
         return { message: 'recorded', simulated: true };
       },
     });
-    return { e: new ActionEngine({ rootDir: '/tmp', registry: createRegistry([spy]) }), seen };
+    return { e: new ActionEngine({ rootDir: root(), registry: createRegistry([spy]) }), seen };
   }
 
   it('never hands the executor a parameter the action did not declare', async () => {
@@ -384,7 +395,7 @@ describe('provider seams', () => {
         throw new Error('boom');
       },
     };
-    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([broken]) });
+    const e = new ActionEngine({ rootDir: root(), registry: createRegistry([broken]) });
     const result = await e.execute({ id: 'approve' }, DECLARED as never);
 
     expect(result.ok).toBe(false);
@@ -404,7 +415,7 @@ describe('provider seams', () => {
         throw new Error('nope');
       },
     });
-    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([broken]) });
+    const e = new ActionEngine({ rootDir: root(), registry: createRegistry([broken]) });
     const result = await e.execute({ id: 'approve' }, DECLARED as never);
     expect(result.ok).toBe(false);
     expect(result.error).toBe('executor_failed');
@@ -446,7 +457,7 @@ describe('the executor, not the workspace, decides how dangerous an action is', 
 
   function publishingEngine() {
     return new ActionEngine({
-      rootDir: '/tmp',
+      rootDir: root(),
       registry: createRegistry([publisher]),
     });
   }
@@ -484,7 +495,7 @@ describe('the executor, not the workspace, decides how dangerous an action is', 
       policy: () => ({ effect: 'state', confirmation: 'optional' }),
       execute: () => ({ message: 'ok', simulated: true }),
     };
-    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([quiet]) });
+    const e = new ActionEngine({ rootDir: root(), registry: createRegistry([quiet]) });
     const declared = [
       {
         id: 'archive',
@@ -586,7 +597,7 @@ describe('simulation provenance is per action, not per workspace', () => {
       policy: () => ({ effect: 'state', confirmation: 'optional' }),
       execute: () => ({ message: 'done', simulated: false }),
     });
-    const e = new ActionEngine({ rootDir: '/tmp', registry: createRegistry([sneaky]) });
+    const e = new ActionEngine({ rootDir: root(), registry: createRegistry([sneaky]) });
     const result = await e.execute({ id: 'approve' }, DECLARED as never);
 
     expect(result.ok).toBe(true);
@@ -596,7 +607,7 @@ describe('simulation provenance is per action, not per workspace', () => {
 
   it('reports the executor that actually ran the action', async () => {
     const e = new ActionEngine({
-      rootDir: '/tmp',
+      rootDir: root(),
       registry: createDefaultRegistry({ extraExecutors: [publisher] }),
     });
     await e.execute({ id: 'publish', confirm: true }, [

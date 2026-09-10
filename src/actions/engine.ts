@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import type { ProviderRegistry } from '../providers/types';
 import { policyFromHint, strictestPolicy } from './policy';
+import { writeDecisionRecord } from './decisions';
 
 // ---------------------------------------------------------------------------
 // Action engine — the security boundary between the browser and anything with
@@ -31,8 +32,10 @@ import { policyFromHint, strictestPolicy } from './policy';
 //      only simulates state changes, so nothing dangerous can happen by
 //      default — but the protocol and the UI flow are fully exercised.
 //
-// The engine keeps an in-memory audit trail and in-memory run/status state. It
-// deliberately writes nothing to the workspace.
+// The engine keeps an in-memory audit trail and in-memory run/status state.
+// One thing it does write: a durable decision record under `.a2h/decisions/`
+// for every attempt, so a restart does not erase the fact that a human acted.
+// That record is an output only — nothing reads it back as authority.
 // ---------------------------------------------------------------------------
 
 const MAX_PARAM_LENGTH = 2000;
@@ -175,16 +178,21 @@ export class ActionEngine {
         this.taskStatus.set(action.taskId, outcome.taskStatus);
       }
 
-      this.record({
-        at: this.now().toISOString(),
-        actionId: action.id,
-        kind: action.kind,
-        sideEffect: policy.effect,
-        ok: true,
-        simulated,
-        message: outcome.message,
-        executor: resolution.executor.id,
-      });
+      this.record(
+        {
+          at: this.now().toISOString(),
+          actionId: action.id,
+          kind: action.kind,
+          sideEffect: policy.effect,
+          ok: true,
+          simulated,
+          message: outcome.message,
+          executor: resolution.executor.id,
+        },
+        // Only what actually reached the executor is persisted, and those are
+        // the params already filtered against the declared schema above.
+        { params, taskId: action.taskId },
+      );
 
       return {
         ok: true,
@@ -230,10 +238,33 @@ export class ActionEngine {
     return { ok: false, actionId, message, simulated: false, error };
   }
 
-  private record(entry: AuditEntry): void {
+  private record(entry: AuditEntry, meta?: DecisionMeta): void {
     this.audit.unshift(entry);
     if (this.audit.length > MAX_AUDIT) this.audit.length = MAX_AUDIT;
+
+    // The durable half of the trail. This is the one place both the success
+    // path and every refusal funnel through, which is what makes "exactly one
+    // record per attempt" true by construction rather than by convention.
+    //
+    // Best-effort on purpose: a read-only checkout, or a `.a2h` that is a
+    // symlink, means the record is refused — and an action that genuinely ran
+    // must not be reported as failed because its note could not be filed.
+    try {
+      writeDecisionRecord(this.rootDir, {
+        a2h: 1,
+        ...entry,
+        params: meta?.params,
+        taskId: meta?.taskId,
+      });
+    } catch {
+      /* audit persistence never fails an action */
+    }
   }
+}
+
+interface DecisionMeta {
+  params?: Record<string, string>;
+  taskId?: string;
 }
 
 interface ParamOutcome {

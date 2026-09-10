@@ -188,7 +188,7 @@ function renderResult(box, result) {
 /** Compact audit trail, shown on the actions page. */
 export function renderAudit(entries) {
   if (!entries || entries.length === 0) {
-    return el('p', { class: 'empty', text: 'No actions have been taken in this session.' });
+    return el('p', { class: 'empty', text: 'No actions have been recorded yet.' });
   }
   const list = el('div', { class: 'audit' });
   for (const entry of entries) {

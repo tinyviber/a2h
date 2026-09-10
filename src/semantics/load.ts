@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileNoFollow, readHeadNoFollow, statNoFollow } from '../util/safeRead';
 import { resolveRealPath } from '../security/boundary';
-import type { Block, Metric, Relation } from '../types';
+import type { Block, DecisionRecord, Metric, Relation } from '../types';
 import type {
   ActionSpec,
   FrontmatterSemantics,
@@ -40,6 +40,8 @@ const MANIFEST_CANDIDATES = [`${MANIFEST_DIR}/manifest.json`, 'a2h.json'];
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MAX_RUN_FILE_BYTES = 512 * 1024;
 const MAX_RUN_FILES = 200;
+const MAX_DECISION_FILE_BYTES = 64 * 1024;
+const MAX_DECISION_FILES = 200;
 const MAX_FRONTMATTER_FILES = 500;
 const FRONTMATTER_HEAD_BYTES = 8 * 1024;
 const MAX_LIST = 500;
@@ -58,11 +60,14 @@ export function loadSemantics(rootDir: string, options: LoadOptions = {}): Loade
     itemSpecs: [],
     groupSpecs: [],
     frontmatter: new Map(),
+    decisions: [],
+    decisionIssues: [],
     warnings,
   };
 
   const manifest = readManifest(rootDir, warnings);
-  if (manifest) {
+  if (manifest.issue) out.manifestIssue = manifest.issue;
+  if (manifest.doc) {
     out.manifest = manifest.doc;
     out.manifestPath = manifest.path;
     const doc = manifest.doc;
@@ -91,6 +96,12 @@ export function loadSemantics(rootDir: string, options: LoadOptions = {}): Loade
   const fileRuns = readRunFiles(rootDir, warnings);
   out.runSpecs.push(...fileRuns);
 
+  // The action trail written by earlier sessions. A missing directory is the
+  // normal case and means "nothing has been decided here yet".
+  const decisions = readDecisionFiles(rootDir, warnings);
+  out.decisions = decisions.records;
+  out.decisionIssues = decisions.issues;
+
   // Producer metadata embedded in markdown frontmatter (lower precedence).
   for (const rel of options.markdownPaths ?? []) {
     const fm = readFrontmatterSemantics(join(rootDir, rel));
@@ -109,32 +120,44 @@ export function hasExplicitSemantics(loaded: LoadedSemantics): boolean {
 // ---------------------------------------------------------------------------
 
 interface ManifestRead {
-  doc: Manifest;
-  path: string;
+  doc?: Manifest;
+  path?: string;
+  /**
+   * The first reason a present candidate was rejected. Kept even when a later
+   * candidate parses, so a broken `manifest.json` shadowed by a valid
+   * `a2h.json` is still reported rather than silently forgiven.
+   */
+  issue?: string;
 }
 
-function readManifest(rootDir: string, warnings: string[]): ManifestRead | undefined {
+function readManifest(rootDir: string, warnings: string[]): ManifestRead {
+  let issue: string | undefined;
+  const note = (message: string): void => {
+    warnings.push(message);
+    issue ??= message;
+  };
+
   for (const rel of MANIFEST_CANDIDATES) {
     const abs = join(rootDir, rel);
     const stat = statNoFollow(abs);
     if (!stat) continue; // absent — try the next candidate
     if (stat.isSymbolicLink) {
-      warnings.push(`${rel} is a symlink and was not read`);
+      note(`${rel} is a symlink and was not read`);
       continue;
     }
     if (!stat.isFile) continue;
     if (stat.size > MAX_MANIFEST_BYTES) {
-      warnings.push(`${rel} is too large to read (${stat.size} bytes)`);
+      note(`${rel} is too large to read (${stat.size} bytes)`);
       continue;
     }
     if (resolveRealPath(rootDir, rel) === null) {
-      warnings.push(`${rel} does not resolve inside the workspace`);
+      note(`${rel} does not resolve inside the workspace`);
       continue;
     }
 
     const read = readFileNoFollow(abs, MAX_MANIFEST_BYTES);
     if (!read) {
-      warnings.push(`could not read ${rel}`);
+      note(`could not read ${rel}`);
       continue;
     }
 
@@ -142,19 +165,158 @@ function readManifest(rootDir: string, warnings: string[]): ManifestRead | undef
     try {
       parsed = JSON.parse(stripBom(read.text));
     } catch (err) {
-      warnings.push(`could not parse ${rel}: ${(err as Error).message}`);
+      note(`could not parse ${rel}: ${(err as Error).message}`);
       continue;
     }
     if (!isRecord(parsed)) {
-      warnings.push(`${rel} must contain a JSON object`);
+      note(`${rel} must contain a JSON object`);
       continue;
     }
     if (parsed.a2h !== undefined && parsed.a2h !== 1) {
+      // A version mismatch is not breakage — the protocol is additive — so it
+      // stays a warning and the document is read as version 1.
       warnings.push(`${rel} declares protocol version ${String(parsed.a2h)}; reading as version 1`);
     }
-    return { doc: parsed as Manifest, path: rel };
+    return { doc: parsed as Manifest, path: rel, issue };
   }
-  return undefined;
+  return { issue };
+}
+
+// ---------------------------------------------------------------------------
+// Durable decision records
+// ---------------------------------------------------------------------------
+
+interface DecisionRead {
+  records: DecisionRecord[];
+  issues: string[];
+}
+
+/**
+ * Reads `.a2h/decisions/*.json`, newest first.
+ *
+ * Same primitives as run records, and for the same reason: these files steer
+ * what the UI says happened, and the workspace that writes them is untrusted.
+ * A refusal is reported as an issue rather than a warning because a decision
+ * trail that silently drops entries is worse than one that says it did.
+ */
+function readDecisionFiles(rootDir: string, warnings: string[]): DecisionRead {
+  const relDir = `${MANIFEST_DIR}/decisions`;
+  const dir = join(rootDir, MANIFEST_DIR, 'decisions');
+  const issues: string[] = [];
+  const records: DecisionRecord[] = [];
+
+  const dirStat = statNoFollow(dir);
+  if (!dirStat) return { records, issues }; // no decisions yet — normal
+  if (dirStat.isSymbolicLink) {
+    const msg = `${relDir} is a symlink and was not read`;
+    warnings.push(msg);
+    issues.push(msg);
+    return { records, issues };
+  }
+  if (!dirStat.isDirectory) {
+    const msg = `${relDir} is not a directory`;
+    warnings.push(msg);
+    issues.push(msg);
+    return { records, issues };
+  }
+
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith('.json'));
+  } catch {
+    return { records, issues };
+  }
+
+  // Newest first: the name begins with a UTC stamp, so lexical order is
+  // chronological and the interesting end is the high one.
+  names.sort().reverse();
+  if (names.length > MAX_DECISION_FILES) {
+    warnings.push(`${relDir} has ${names.length} files; reading the newest ${MAX_DECISION_FILES}`);
+    names = names.slice(0, MAX_DECISION_FILES);
+  }
+
+  for (const name of names) {
+    const rel = `${relDir}/${name}`;
+    const abs = join(dir, name);
+
+    const stat = statNoFollow(abs);
+    if (!stat || stat.isSymbolicLink || !stat.isFile) {
+      fail(`${rel} is a symlink or not a file; skipped`);
+      continue;
+    }
+    if (stat.size > MAX_DECISION_FILE_BYTES) {
+      fail(`${rel} is too large to read (${stat.size} bytes)`);
+      continue;
+    }
+    if (resolveRealPath(rootDir, rel) === null) {
+      fail(`${rel} does not resolve inside the workspace`);
+      continue;
+    }
+
+    const read = readFileNoFollow(abs, MAX_DECISION_FILE_BYTES);
+    if (!read) {
+      fail(`could not read ${rel}`);
+      continue;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stripBom(read.text));
+    } catch (err) {
+      fail(`could not parse ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+    const record = sanitizeDecision(parsed);
+    if (!record) {
+      fail(`${rel} is not a decision record (needs "at" and "actionId")`);
+      continue;
+    }
+    records.push(record);
+  }
+
+  return { records, issues };
+
+  function fail(message: string): void {
+    warnings.push(message);
+    issues.push(message);
+  }
+}
+
+function sanitizeDecision(input: unknown): DecisionRecord | undefined {
+  if (!isRecord(input)) return undefined;
+  const at = asString(input.at);
+  const actionId = asString(input.actionId);
+  if (!at || !actionId) return undefined;
+
+  return {
+    a2h: asNumber(input.a2h) ?? 1,
+    at,
+    actionId,
+    kind: asString(input.kind) ?? 'n/a',
+    sideEffect: asString(input.sideEffect) ?? 'none',
+    // Both defaults point at the safe reading: an unlabelled record never
+    // claims a success, and never claims a real (non-simulated) effect.
+    ok: asBool(input.ok) ?? false,
+    simulated: asBool(input.simulated) ?? true,
+    message: asString(input.message) ?? '',
+    executor: asString(input.executor) ?? 'unknown',
+    params: sanitizeStringRecord(input.params),
+    taskId: asString(input.taskId),
+  };
+}
+
+/** Mirrors the engine's param bounds so a hand-written file cannot bloat the view. */
+function sanitizeStringRecord(input: unknown): Record<string, string> | undefined {
+  if (!isRecord(input)) return undefined;
+  const out: Record<string, string> = {};
+  let n = 0;
+  for (const [key, value] of Object.entries(input)) {
+    if (n >= 20) break;
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') continue;
+    out[key] = String(value).slice(0, 2000);
+    n += 1;
+  }
+  return n > 0 ? out : undefined;
 }
 
 function readRunFiles(rootDir: string, warnings: string[]): RunSpec[] {
