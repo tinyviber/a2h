@@ -6,7 +6,7 @@ import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
 import { writeStarterManifest } from './init';
 
-const VERSION = '0.2.0';
+const VERSION = '0.1.0';
 const DEFAULT_PORT = 8420;
 
 interface ParsedArgs {
