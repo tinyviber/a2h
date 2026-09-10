@@ -2,8 +2,12 @@ import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { normalizeRel } from '../util/path';
 
-// Route-safety helpers. All filesystem access driven by a URL is funnelled
-// through here so path traversal and symlink escape are impossible.
+// Path containment primitives. These are pure predicates over the filesystem —
+// they read metadata only, never content.
+//
+// They live outside `server/` because containment is not an HTTP concern: a
+// workspace-relative path can arrive from a URL, from a manifest, or from a
+// block, and every one of those routes has to answer the same question.
 
 export function isWithin(root: string, target: string): boolean {
   const r = resolve(root);
@@ -14,6 +18,9 @@ export function isWithin(root: string, target: string): boolean {
 /**
  * Resolves a workspace-relative POSIX path to an absolute path strictly
  * inside the workspace root. Returns null on traversal attempts.
+ *
+ * This is a lexical check: it refuses `..`, but says nothing about symlinks.
+ * Use `resolveRealPath` when the answer must survive a link in the tree.
  */
 export function resolveRelPath(root: string, rel: string): string | null {
   const normalized = normalizeRel(rel);
@@ -24,9 +31,12 @@ export function resolveRelPath(root: string, rel: string): string | null {
 }
 
 /**
- * Like resolveRelPath, but also resolves symlinks and verifies the final real
- * path stays inside the workspace. Used when serving raw file bytes.
- * Returns the symlinked path (stable, relative to the workspace) on success.
+ * Like resolveRelPath, but also resolves symlinks and verifies the *real* path
+ * stays inside the workspace. This is the check that catches an intermediate
+ * directory which is a link out of the tree — `leak -> /etc` makes
+ * `leak/passwd` lexical, but never contained.
+ *
+ * Returns the lexical absolute path (stable, knows no symlinks) on success.
  */
 export function resolveRealPath(root: string, rel: string): string | null {
   const abs = resolveRelPath(root, rel);

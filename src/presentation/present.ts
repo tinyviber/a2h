@@ -37,7 +37,10 @@ export interface PresentOptions {
 
 export function present(ir: SemanticIR, options: PresentOptions = {}): Presentation {
   const semantics = options.semantics;
-  const ctx: BlockContext = options.blockContext ?? { rootDir: '' };
+  // No reader means no file-backed block resolves. That is the safe default:
+  // a caller without a scanner index cannot accidentally grant disk access by
+  // forgetting a check.
+  const ctx: BlockContext = options.blockContext ?? {};
 
   const sections: SectionView[] = ir.root.children.map((section) => ({
     id: section.id,

@@ -1,4 +1,4 @@
-import { openSync, readSync, closeSync, constants } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 
 // A2H reads files it did not create, in a directory tree it does not own. The
 // only thing standing between a workspace and the rest of the machine is that
@@ -7,8 +7,11 @@ import { openSync, readSync, closeSync, constants } from 'node:fs';
 // Every read of workspace content goes through here. `O_NOFOLLOW` fails the
 // open if the final path component is a symlink, so a link named `notes.md`
 // pointing at `/etc/passwd` yields nothing rather than leaking a line of it
-// into the UI. Intermediate directory components are still traversed, which is
-// correct: the scanner rejects escapes before a path ever gets this far.
+// into the UI. Intermediate directory components are still traversed; callers
+// pair this with `resolveRealPath` so an intermediate link out of the tree is
+// caught before the read, not after.
+//
+// Nothing in this file trusts its caller to have checked anything.
 //
 // `O_NOFOLLOW` is absent on Windows; there the flag degrades to 0 and the
 // scanner's own symlink detection remains the control.
@@ -51,5 +54,68 @@ export function readBytesNoFollow(path: string, maxBytes: number): Buffer | unde
     return undefined;
   } finally {
     if (fd !== undefined) closeSync(fd);
+  }
+}
+
+export interface BoundedRead {
+  text: string;
+  /** True when the file was longer than the cap and got cut. */
+  truncated: boolean;
+  totalBytes: number;
+}
+
+/**
+ * Reads a whole file, capped at `maxBytes`.
+ *
+ * Unlike `readFileText`, an unreadable file is reported as `undefined` rather
+ * than an empty string — the difference between "no content" and "refused to
+ * read" matters at a security boundary.
+ */
+export function readFileNoFollow(path: string, maxBytes: number): BoundedRead | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openNoFollow(path);
+    const stat = fstatSync(fd);
+    const totalBytes = stat.size;
+    const toRead = Math.min(totalBytes, maxBytes);
+    const buf = Buffer.alloc(toRead);
+    const n = readSync(fd, buf, 0, toRead, 0);
+    return {
+      text: buf.subarray(0, n).toString('utf8'),
+      truncated: totalBytes > maxBytes,
+      totalBytes,
+    };
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+export interface NoFollowStat {
+  isFile: boolean;
+  isDirectory: boolean;
+  isSymbolicLink: boolean;
+  size: number;
+}
+
+/**
+ * Metadata for a path, without following a final-component symlink.
+ *
+ * `statSync` would follow the link, so a link named `manifest.json` would look
+ * like a perfectly ordinary file of the target's size. `lstatSync` describes
+ * the link itself, which is what a caller deciding whether to read must know.
+ */
+export function statNoFollow(path: string): NoFollowStat | undefined {
+  try {
+    const st = lstatSync(path);
+    return {
+      isFile: st.isFile(),
+      isDirectory: st.isDirectory(),
+      isSymbolicLink: st.isSymbolicLink(),
+      size: st.size,
+    };
+  } catch {
+    return undefined;
   }
 }

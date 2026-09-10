@@ -23,7 +23,10 @@ export type { ActionExecutor, ProviderRegistry } from './providers/types';
 // Server
 export { Workspace } from './server/workspace';
 export { createA2hServer, findAssetsDir } from './server/server';
-export { resolveRelPath, resolveRealPath, isWithin } from './server/safePath';
+// Security boundary
+export { resolveRelPath, resolveRealPath, isWithin } from './security/boundary';
+export { createWorkspaceReader } from './security/workspaceRead';
+export type { WorkspaceReader } from './security/workspaceRead';
 
 // Content
 export { renderContent } from './renderer/content';

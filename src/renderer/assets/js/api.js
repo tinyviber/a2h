@@ -21,11 +21,17 @@ export function loadArtifact(path, mode) {
 /**
  * Executes a declared action. The server owns the allowlist and the
  * confirmation boundary; this function only carries the request.
+ *
+ * Mutating requests have to present the session token the server injected into
+ * this page. It is not a password and not a login — it exists so that another
+ * page in the same browser cannot forge a request to a localhost control API,
+ * which is exactly what makes it worth carrying on every call rather than
+ * fetching once and trusting the result.
  */
 export async function executeAction(payload) {
   const res = await fetch('/api/action', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-A2H-Token': sessionToken() },
     body: JSON.stringify(payload),
   });
   let body;
@@ -35,6 +41,11 @@ export async function executeAction(payload) {
     body = { ok: false, error: 'bad_response', message: 'The server returned an unreadable response.' };
   }
   return body;
+}
+
+function sessionToken() {
+  const meta = document.querySelector('meta[name="a2h-token"]');
+  return meta ? meta.getAttribute('content') || '' : '';
 }
 
 /** Subscribes to workspace change / action events. Returns a close function. */

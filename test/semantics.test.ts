@@ -291,6 +291,24 @@ describe('append-only producers', () => {
 
     expect(ws.presentation.runs.map((r) => r.id)).toContain('late-run');
   });
+
+  it('keeps the newest runs when there are more than it will read', () => {
+    // Run files are named so lexical order is chronological. Sorting ascending
+    // and slicing would pin the window to the oldest runs forever, so a
+    // long-lived producer would never see its latest work.
+    const files: Record<string, string> = { 'README.md': '# Hi\n' };
+    const total = 205;
+    for (let i = 0; i < total; i++) {
+      const name = `run-${String(i).padStart(3, '0')}.json`;
+      files[`.a2h/runs/${name}`] = JSON.stringify({ id: `r${i}` });
+    }
+    const ws = new Workspace(makeWorkspace(files));
+    const ids = ws.presentation.runs.map((r) => r.id);
+
+    expect(ids).toContain(`r${total - 1}`);
+    expect(ids).not.toContain('r0');
+    expect(ws.presentation.warnings.join(' ')).toMatch(/newest/);
+  });
 });
 
 describe('semantics origin reporting', () => {

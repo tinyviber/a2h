@@ -31,7 +31,12 @@ export function renderActions(ids, options = {}) {
 function actionRow(action, options) {
   const row = el('div', { class: 'action-row' });
 
-  if (action.description || action.sideEffect !== 'none') {
+  // `compact` trims the descriptive chrome, nothing else. It used to hide the
+  // parameter inputs too, which made any action with required params
+  // impossible to run from a block: the button could only ever come back
+  // "missing required input". An action that asks for a value needs a field to
+  // put it in, wherever it is rendered.
+  if (!options.compact && (action.description || action.sideEffect !== 'none')) {
     const meta = [];
     if (action.sideEffect !== 'none') meta.push(SIDE_EFFECT_LABEL[action.sideEffect] || action.sideEffect);
     if (action.simulated) meta.push('simulated');
@@ -46,7 +51,7 @@ function actionRow(action, options) {
   const controls = el('div', { class: 'action-controls' });
   const inputs = new Map();
 
-  if (action.params && action.params.length && !options.compact) {
+  if (action.params && action.params.length) {
     const form = el('div', { class: 'action-params' });
     for (const param of action.params) {
       const input = paramInput(param, inputs);

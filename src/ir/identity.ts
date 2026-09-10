@@ -1,6 +1,5 @@
 import { basename } from 'node:path';
-import { readFileSync } from 'node:fs';
-import { readHeadNoFollow } from '../util/safeRead';
+import { readFileNoFollow, readHeadNoFollow } from '../util/safeRead';
 import type { FileEntry, WorkspaceIdentity } from '../types';
 
 // Derives a human-facing identity for the workspace without requiring a
@@ -9,8 +8,7 @@ import type { FileEntry, WorkspaceIdentity } from '../types';
 
 const README_NAMES = new Set([
   'readme.md', 'readme.markdown', 'readme.mdown', 'readme.txt',
-  'readme.mdx', 'readme.rst', 'readme',
-]);
+  'readme.mdx', 'readme.rst', 'readme',]);
 
 const MAX_READ_BYTES = 64 * 1024;
 
@@ -64,9 +62,17 @@ function extractHeading(md: string): Heading {
   return { title, summary };
 }
 
+/** Enough for any real package.json; enough to stop a pathological one. */
+const MAX_PACKAGE_JSON_BYTES = 256 * 1024;
+
 function readPackageJson(rootDir: string): { name?: string; description?: string } {
+  // A workspace file like any other: read through the no-follow primitive, so
+  // a `package.json` that is a link to something outside contributes nothing,
+  // and a huge one cannot be used to make startup expensive.
+  const read = readFileNoFollow(`${rootDir}/package.json`, MAX_PACKAGE_JSON_BYTES);
+  if (!read) return {};
   try {
-    const pkg = JSON.parse(readFileSync(`${rootDir}/package.json`, 'utf8')) as Record<string, unknown>;
+    const pkg = JSON.parse(read.text) as Record<string, unknown>;
     return {
       name: typeof pkg.name === 'string' ? pkg.name : undefined,
       description: typeof pkg.description === 'string' ? pkg.description : undefined,

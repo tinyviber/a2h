@@ -1,21 +1,32 @@
 import type { Block } from '../types';
+import type { WorkspaceReader } from '../security/workspaceRead';
 import { renderMarkdown } from '../parsers/markdown';
-import { readFileText } from '../parsers/text';
 import { normalizeRel } from '../util/path';
 
 // Blocks authored by a producer arrive as plain JSON. This module turns them
 // into render-ready payloads: markdown is compiled server-side with the same
 // conservative renderer used for artifacts, and file references are resolved
-// against the workspace.
+// through the workspace read capability.
+//
+// Note what this file does *not* have: a path. It cannot build one, so it
+// cannot accidentally read one. A block that names a file asks the reader for
+// its text, and the reader decides — sensitive files, symlinks, escapes and
+// oversized reads are refused there, once, for every producer-authored
+// reference rather than for the ones we remembered to guard.
 //
 // Unknown block types are passed through untouched — the client registry
 // decides what it can draw and shows a readable fallback otherwise. That is
 // what keeps this protocol forward-compatible.
 
 export interface BlockContext {
-  rootDir: string;
-  /** Maps a workspace-relative image path to a servable URL, if it exists. */
-  resolveImage?: (relPath: string) => string | undefined;
+  /**
+   * The only route from a producer-authored path to bytes. Absent means no
+   * file-backed block can resolve — which is the correct default for a caller
+   * that has no scanner index to check against.
+   */
+  reader?: WorkspaceReader;
+  /** Maps an already-validated workspace image path to a servable URL. */
+  imageUrl?: (relPath: string) => string | undefined;
 }
 
 const MAX_BLOCK_FILE_BYTES = 512 * 1024;
@@ -56,12 +67,11 @@ function readBlockText(record: Record<string, unknown>, ctx: BlockContext): stri
     return record.text.trim() ? record.text : undefined;
   }
   if (typeof record.path === 'string') {
-    const rel = normalizeRel(record.path);
-    if (!rel) return undefined;
-    const { text, totalBytes } = readFileText(`${ctx.rootDir}/${rel}`, MAX_BLOCK_FILE_BYTES);
-    // A missing file, an unreadable one, or a symlink all come back empty. An
-    // empty block would render as a blank frame, so treat it as absent.
-    if (totalBytes === 0 || !text.trim()) return undefined;
+    // The reader applies the workspace boundary; a refusal and a missing file
+    // look the same from here, and both mean "this block has nothing to show".
+    const text = ctx.reader?.readText(record.path, MAX_BLOCK_FILE_BYTES);
+    // An empty block would render as a blank frame, so treat it as absent.
+    if (text === undefined || !text.trim()) return undefined;
     return text;
   }
   return undefined;
@@ -72,11 +82,13 @@ function resolveBlockImage(
   baseDir: string,
   ctx: BlockContext,
 ): string | undefined {
-  if (!ctx.resolveImage) return undefined;
+  const { reader, imageUrl } = ctx;
+  if (!reader || !imageUrl) return undefined;
   const clean = decodeURIComponent(src.split('#')[0]!.split('?')[0]!).trim();
   const rel = baseDir ? normalizeRel(`${baseDir}/${clean}`) : normalizeRel(clean);
   if (!rel) return undefined;
-  return ctx.resolveImage(rel);
+  if (!reader.canReadImage(rel)) return undefined;
+  return imageUrl(rel);
 }
 
 function dirOf(path: string): string {

@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readHeadNoFollow } from '../util/safeRead';
+import { readFileNoFollow, readHeadNoFollow, statNoFollow } from '../util/safeRead';
+import { resolveRealPath } from '../security/boundary';
 import type { Block, Metric, Relation } from '../types';
 import type {
   ActionSpec,
@@ -16,11 +17,28 @@ import type {
 // Reads the producer-authored semantics from disk. Everything here is
 // best-effort: a malformed manifest produces a warning, never a crash, so a
 // broken producer can never make `a2h render` unusable.
+//
+// "Best-effort" is not "trusting". The manifest and its run records are the
+// most attractive files in a workspace for an attacker — they are the ones a
+// producer is invited to write, and their contents steer the UI. So they are
+// read with the same primitives as everything else:
+//
+//   * `statNoFollow` — never follows a link, so a manifest that is a symlink
+//     to `/etc/passwd` is a link, not a document;
+//   * `resolveRealPath` — the protocol directory must resolve inside the
+//     workspace, so `.a2h -> /somewhere/else` is refused;
+//   * `readFileNoFollow` + a byte cap — bounded, and never a symlink.
+//
+// The paths here are fixed by the protocol rather than chosen by a producer,
+// which is why this does not go through `createWorkspaceReader`: the scanner
+// deliberately ignores `.a2h`, so it is not in that allowlist and should not
+// be. The read primitives are shared; only the allowlist differs.
 
 export const MANIFEST_DIR = '.a2h';
-const MANIFEST_CANDIDATES = [join(MANIFEST_DIR, 'manifest.json'), 'a2h.json'];
+const MANIFEST_CANDIDATES = [`${MANIFEST_DIR}/manifest.json`, 'a2h.json'];
 
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
+const MAX_RUN_FILE_BYTES = 512 * 1024;
 const MAX_RUN_FILES = 200;
 const MAX_FRONTMATTER_FILES = 500;
 const FRONTMATTER_HEAD_BYTES = 8 * 1024;
@@ -98,50 +116,102 @@ interface ManifestRead {
 function readManifest(rootDir: string, warnings: string[]): ManifestRead | undefined {
   for (const rel of MANIFEST_CANDIDATES) {
     const abs = join(rootDir, rel);
-    if (!existsSync(abs)) continue;
+    const stat = statNoFollow(abs);
+    if (!stat) continue; // absent — try the next candidate
+    if (stat.isSymbolicLink) {
+      warnings.push(`${rel} is a symlink and was not read`);
+      continue;
+    }
+    if (!stat.isFile) continue;
+    if (stat.size > MAX_MANIFEST_BYTES) {
+      warnings.push(`${rel} is too large to read (${stat.size} bytes)`);
+      continue;
+    }
+    if (resolveRealPath(rootDir, rel) === null) {
+      warnings.push(`${rel} does not resolve inside the workspace`);
+      continue;
+    }
+
+    const read = readFileNoFollow(abs, MAX_MANIFEST_BYTES);
+    if (!read) {
+      warnings.push(`could not read ${rel}`);
+      continue;
+    }
+
+    let parsed: unknown;
     try {
-      const st = statSync(abs);
-      if (!st.isFile()) continue;
-      if (st.size > MAX_MANIFEST_BYTES) {
-        warnings.push(`${rel} is too large to read (${st.size} bytes)`);
-        continue;
-      }
-      const raw = readFileSync(abs, 'utf8');
-      const parsed: unknown = JSON.parse(stripBom(raw));
-      if (!isRecord(parsed)) {
-        warnings.push(`${rel} must contain a JSON object`);
-        continue;
-      }
-      if (parsed.a2h !== undefined && parsed.a2h !== 1) {
-        warnings.push(`${rel} declares protocol version ${String(parsed.a2h)}; reading as version 1`);
-      }
-      return { doc: parsed as Manifest, path: rel };
+      parsed = JSON.parse(stripBom(read.text));
     } catch (err) {
       warnings.push(`could not parse ${rel}: ${(err as Error).message}`);
-      return undefined;
+      continue;
     }
+    if (!isRecord(parsed)) {
+      warnings.push(`${rel} must contain a JSON object`);
+      continue;
+    }
+    if (parsed.a2h !== undefined && parsed.a2h !== 1) {
+      warnings.push(`${rel} declares protocol version ${String(parsed.a2h)}; reading as version 1`);
+    }
+    return { doc: parsed as Manifest, path: rel };
   }
   return undefined;
 }
 
 function readRunFiles(rootDir: string, warnings: string[]): RunSpec[] {
+  const relDir = `${MANIFEST_DIR}/runs`;
   const dir = join(rootDir, MANIFEST_DIR, 'runs');
-  if (!existsSync(dir)) return [];
+
+  const dirStat = statNoFollow(dir);
+  if (!dirStat) return [];
+  if (dirStat.isSymbolicLink) {
+    warnings.push(`${relDir} is a symlink and was not read`);
+    return [];
+  }
+  if (!dirStat.isDirectory) return [];
+
   let names: string[];
   try {
-    names = readdirSync(dir).filter((n) => n.endsWith('.json')).sort();
+    names = readdirSync(dir).filter((n) => n.endsWith('.json'));
   } catch {
     return [];
   }
+
+  // Newest first. Run files are named so that lexical order is chronological
+  // (`2026-09-10-ingest.json`), which means the interesting end of the list is
+  // the *high* end. Sorting ascending and slicing would pin the window to the
+  // oldest runs forever, and a long-lived producer would never see its latest
+  // work rendered.
+  names.sort().reverse();
   if (names.length > MAX_RUN_FILES) {
-    warnings.push(`.a2h/runs has ${names.length} files; reading the first ${MAX_RUN_FILES}`);
+    warnings.push(`${relDir} has ${names.length} files; reading the newest ${MAX_RUN_FILES}`);
     names = names.slice(0, MAX_RUN_FILES);
   }
+
   const runs: RunSpec[] = [];
   for (const name of names) {
+    const abs = join(dir, name);
+    const stat = statNoFollow(abs);
+    if (!stat || stat.isSymbolicLink || !stat.isFile) {
+      warnings.push(`${relDir}/${name} is a symlink or not a file; skipped`);
+      continue;
+    }
+    if (stat.size > MAX_RUN_FILE_BYTES) {
+      warnings.push(`${relDir}/${name} is too large to read (${stat.size} bytes)`);
+      continue;
+    }
+    if (resolveRealPath(rootDir, `${relDir}/${name}`) === null) {
+      warnings.push(`${relDir}/${name} does not resolve inside the workspace`);
+      continue;
+    }
+
+    const read = readFileNoFollow(abs, MAX_RUN_FILE_BYTES);
+    if (!read) {
+      warnings.push(`could not read ${relDir}/${name}`);
+      continue;
+    }
+
     try {
-      const raw = readFileSync(join(dir, name), 'utf8');
-      const parsed: unknown = JSON.parse(stripBom(raw));
+      const parsed: unknown = JSON.parse(stripBom(read.text));
       if (Array.isArray(parsed)) {
         for (const item of parsed) {
           const r = sanitizeRun(item, warnings);
@@ -157,7 +227,7 @@ function readRunFiles(rootDir: string, warnings: string[]): RunSpec[] {
         if (r) runs.push(r);
       }
     } catch (err) {
-      warnings.push(`could not parse .a2h/runs/${name}: ${(err as Error).message}`);
+      warnings.push(`could not parse ${relDir}/${name}: ${(err as Error).message}`);
     }
   }
   return runs;
@@ -312,9 +382,13 @@ function sanitizeAction(input: unknown, warnings: string[]): ActionSpec | undefi
     target: asString(input.target),
     description: asString(input.description),
     sideEffect,
-    // Anything with a side effect beyond A2H's own state must be confirmed,
-    // unless the producer explicitly opted out with confirm:false.
-    confirm: asBool(input.confirm) ?? sideEffect === 'external',
+    // A manifest may raise protection, never lower it. `external` means the
+    // effect leaves this machine, so confirmation is not the producer's to
+    // waive — `confirm: false` on an external action is ignored rather than
+    // honoured. (The engine enforces the same rule independently, because an
+    // untrusted workspace should not be able to set the security policy even
+    // if this loader is ever bypassed.)
+    confirm: sideEffect === 'external' ? true : (asBool(input.confirm) ?? false),
     params: params.length ? params : undefined,
     enabled: asBool(input.enabled) ?? true,
   };

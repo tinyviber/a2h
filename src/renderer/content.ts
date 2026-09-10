@@ -1,4 +1,4 @@
-import { openSync, readSync, closeSync } from 'node:fs';
+import { readSync, closeSync } from 'node:fs';
 import type { ArtifactContent, ContentKind, FileEntry } from '../types';
 import { contentKindOf } from '../scanner/classify';
 import { renderMarkdown, splitFrontmatter } from '../parsers/markdown';
@@ -7,6 +7,7 @@ import { parseJson } from '../parsers/json';
 import { parseLog } from '../parsers/log';
 import { parseCode } from '../parsers/code';
 import { readFileText } from '../parsers/text';
+import { openNoFollow } from '../util/safeRead';
 import { normalizeRel } from '../util/path';
 
 // Content rendering is driven by *what the bytes are*, never by the semantic
@@ -121,9 +122,9 @@ function readBytes(path: string, max: number): Buffer {
   const buf = Buffer.alloc(max);
   let fd;
   try {
-    fd = openSync(path, 'r');
+    fd = openNoFollow(path);
     const n = readSync(fd, buf, 0, max, 0);
-    return buf.slice(0, n);
+    return buf.subarray(0, n);
   } catch {
     return Buffer.alloc(0);
   } finally {

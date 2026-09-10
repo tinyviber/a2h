@@ -194,7 +194,13 @@ describe('browser input is untrusted data, never a command', () => {
       { id: 'approve', params: { shell: 'rm -rf /', cwd: '/etc' } },
       DECLARED as never,
     );
-    // The action ran, and what ran was `approve` — not the string it was given.
+    // `approve` declares no parameters, so nothing survives the schema filter.
+    // The mock echoes whatever it receives into the run summary, which makes
+    // the absence observable rather than merely asserted.
+    const run = e.getRuntimeRuns()[0]!;
+    expect(run.summary).not.toContain('shell');
+    expect(run.summary).not.toContain('/etc');
+
     const audit = e.getAuditTrail();
     expect(audit[0]!.actionId).toBe('approve');
     expect(audit[0]!.kind).toBe('approve');
@@ -206,6 +212,156 @@ describe('browser input is untrusted data, never a command', () => {
       DECLARED as never,
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('a manifest cannot lower the confirmation boundary', () => {
+  // `confirm` is a manifest field, and the manifest is untrusted input. The
+  // rule "an effect that leaves this machine is confirmed by a human" is the
+  // server's, so a workspace can add friction but never remove it.
+
+  const EXTERNAL_OPT_OUT = [
+    {
+      id: 'publish',
+      label: 'Publish',
+      kind: 'publish',
+      taskId: 't1',
+      sideEffect: 'external' as const,
+      confirm: false, // the workspace trying to waive it
+      enabled: true,
+      simulated: true,
+    },
+  ];
+
+  it('requires confirmation for an external action even when the workspace opted out', async () => {
+    const e = engine();
+    const result = await e.execute({ id: 'publish' }, EXTERNAL_OPT_OUT as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('confirmation_required');
+    expect(e.getRuntimeRuns()).toEqual([]);
+  });
+
+  it('runs it once the human confirms', async () => {
+    const e = engine();
+    const result = await e.execute({ id: 'publish', confirm: true }, EXTERNAL_OPT_OUT as never);
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses to load confirm:false onto an external action in the first place', () => {
+    const root = makeWorkspace({
+      ...manifest({
+        a2h: 1,
+        actions: [
+          { id: 'publish', label: 'Publish', kind: 'publish', sideEffect: 'external', confirm: false },
+        ],
+      }),
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+
+    const action = ws.presentation.actions.find((a) => a.id === 'publish')!;
+    expect(action.confirm).toBe(true);
+  });
+
+  it('honours a workspace that asks for more confirmation than required', () => {
+    const root = makeWorkspace({
+      ...manifest({
+        a2h: 1,
+        actions: [{ id: 'archive', label: 'Archive', kind: 'archive', sideEffect: 'state', confirm: true }],
+      }),
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+
+    const action = ws.presentation.actions.find((a) => a.id === 'archive')!;
+    expect(action.confirm).toBe(true);
+  });
+});
+
+describe('parameters are filtered against the declared schema', () => {
+  const CHOOSE = [
+    {
+      id: 'choose',
+      label: 'Choose',
+      kind: 'approve',
+      taskId: 't1',
+      sideEffect: 'state' as const,
+      confirm: false,
+      enabled: true,
+      simulated: true,
+      params: [
+        { name: 'verdict', label: 'Verdict', type: 'select' as const, required: true, options: ['keep', 'drop'] },
+        { name: 'notify', label: 'Notify', type: 'boolean' as const },
+        { name: 'note', label: 'Note', type: 'text' as const },
+      ],
+    },
+  ];
+
+  /** An executor that records exactly what it was handed. */
+  function spyingEngine() {
+    const seen: (Record<string, string> | undefined)[] = [];
+    const spy: ActionExecutor = markSimulated({
+      id: 'spy',
+      description: 'records its arguments',
+      handles: () => true,
+      execute: (_action, params) => {
+        seen.push(params);
+        return { message: 'recorded', simulated: true };
+      },
+    });
+    return { e: new ActionEngine({ rootDir: '/tmp', registry: createRegistry([spy]) }), seen };
+  }
+
+  it('never hands the executor a parameter the action did not declare', async () => {
+    const { e, seen } = spyingEngine();
+    const result = await e.execute(
+      { id: 'choose', params: { verdict: 'keep', shell: 'rm -rf /', cwd: '/etc' } },
+      CHOOSE as never,
+    );
+
+    expect(result.ok).toBe(true);
+    // The decisive property: not "the executor ignored them" but "they never
+    // arrived". A provider written against the spec cannot be steered by a
+    // field it has never heard of.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({ verdict: 'keep' });
+  });
+
+  it('refuses a select value outside the declared options instead of passing it on', async () => {
+    const { e, seen } = spyingEngine();
+    const result = await e.execute(
+      { id: 'choose', params: { verdict: '../../etc/passwd' } },
+      CHOOSE as never,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('invalid_params');
+    expect(seen).toEqual([]); // never reached an executor
+  });
+
+  it('normalizes a boolean to a canonical string', async () => {
+    const { e, seen } = spyingEngine();
+    await e.execute({ id: 'choose', params: { verdict: 'keep', notify: false } }, CHOOSE as never);
+    expect(seen[0]).toEqual({ verdict: 'keep', notify: 'false' });
+  });
+
+  it('refuses a boolean that is neither true nor false', async () => {
+    const { e, seen } = spyingEngine();
+    const result = await e.execute(
+      { id: 'choose', params: { verdict: 'keep', notify: 'maybe' } },
+      CHOOSE as never,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('invalid_params');
+    expect(seen).toEqual([]);
+  });
+
+  it('still records exactly one audit line for a schema refusal', async () => {
+    const { e } = spyingEngine();
+    await e.execute({ id: 'choose', params: { verdict: 'nope' } }, CHOOSE as never);
+    expect(e.getAuditTrail()).toHaveLength(1);
+    expect(e.getAuditTrail()[0]).toMatchObject({ actionId: 'choose', ok: false });
   });
 });
 

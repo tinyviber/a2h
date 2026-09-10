@@ -14,6 +14,7 @@ import type { BlockContext } from '../presentation/blocks';
 import { renderContent } from '../renderer/content';
 import { loadSemantics } from '../semantics/load';
 import { resolveSemantics, type ResolvedSemantics } from '../semantics/resolve';
+import { createWorkspaceReader, type WorkspaceReader } from '../security/workspaceRead';
 import { ActionEngine } from '../actions/engine';
 import { createDefaultRegistry } from '../providers/registry';
 import type { ProviderRegistry } from '../providers/types';
@@ -47,6 +48,12 @@ export class Workspace {
   private viewsByPath: Map<string, ArtifactView> = new Map();
   private nodesByPath: Map<string, SemanticNode> = new Map();
   private knownImages: Set<string> = new Set();
+
+  /**
+   * The single route from a producer-authored path to bytes. Rebuilt on every
+   * scan, so it always describes the tree we last looked at.
+   */
+  private reader: WorkspaceReader;
 
   /** Incremented on every (re)scan; used as the change signal for watch. */
   version = 0;
@@ -106,6 +113,9 @@ export class Workspace {
       warnings: [],
     };
 
+    // An empty reader until the first scan fills it, so the capability is
+    // never momentarily undefined.
+    this.reader = createWorkspaceReader({ rootDir: this.rootDir, files: [] });
     this.rebuild();
   }
 
@@ -166,8 +176,8 @@ export class Workspace {
 
   private blockContext(): BlockContext {
     return {
-      rootDir: this.rootDir,
-      resolveImage: (rel) => (this.knownImages.has(rel) ? this.fileUrl(rel) : undefined),
+      reader: this.reader,
+      imageUrl: (rel) => this.fileUrl(rel),
     };
   }
 
@@ -176,6 +186,10 @@ export class Workspace {
   private rebuild(): void {
     const scan = scanWorkspace({ rootDir: this.rootDir });
     this.scan = scan;
+
+    // Built before anything that resolves a producer-authored path, so the
+    // capability is never momentarily unavailable.
+    this.reader = createWorkspaceReader({ rootDir: this.rootDir, files: scan.files });
 
     this.knownImages = new Set(
       scan.files.filter((f) => f.kind === 'image' && !f.isSymlink).map((f) => f.path),

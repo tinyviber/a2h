@@ -222,6 +222,20 @@ async function radarProfile(browser, base) {
   check('radar: timeline panel renders', (await desktop.$$('.timeline-item')).length >= 4);
   check('radar: key/value panel renders', (await desktop.$$('.kv dt')).length >= 3);
 
+  // A producer-authored `actions` block renders compactly — but compact must
+  // trim chrome only. An action that declares parameters needs fields to put
+  // them in wherever it is drawn, or the button can only ever come back
+  // "missing required input".
+  check('radar: actions block renders its declared actions', (await desktop.$$('.block-actions .action-row')).length >= 2);
+  const blockParamFields = await desktop.$$(
+    '.block-actions .action-param input, .block-actions .action-param select, .block-actions .action-param textarea',
+  );
+  check(
+    'radar: a compact action still renders the fields it requires',
+    blockParamFields.length >= 4,
+    `fields=${blockParamFields.length}`,
+  );
+
   // Tasks.
   await desktop.goto(`${base}/#/tasks`, { waitUntil: 'networkidle' });
   await desktop.waitForSelector('.card-task', { timeout: 5000 });

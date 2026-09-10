@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
+import { join } from 'node:path';
+import type { FileEntry } from '../src/types';
 import { Workspace } from '../src/server/workspace';
+import { createWorkspaceReader } from '../src/security/workspaceRead';
 import { makeWorkspace, manifest, symlink, fixturePng } from './helpers/ws';
+
+/** A FileEntry for `rel`, as the scanner would record it. */
+function entry(root: string, rel: string, overrides: Partial<FileEntry> = {}): FileEntry {
+  const slash = rel.lastIndexOf('/');
+  return {
+    path: rel,
+    absolutePath: join(root, rel),
+    kind: 'other',
+    size: 0,
+    mtimeMs: 0,
+    ext: slash === -1 ? (rel.includes('.') ? rel.split('.').pop()! : '') : '',
+    isSymlink: false,
+    sensitive: false,
+    depth: rel.split('/').length - 1,
+    ...overrides,
+  };
+}
 
 // What a workspace can and cannot make A2H reveal.
 //
@@ -110,6 +130,178 @@ describe('symlinks are never followed', () => {
     // The block is dropped rather than filled with the target's contents.
     expect(ws.presentation.panels).toEqual([]);
     expect(JSON.stringify(ws.presentation.panels)).not.toMatch(/root:.*:0:0/);
+  });
+});
+
+describe('producer-authored file references go through one capability', () => {
+  // A block that names a file is asking the workspace for bytes. Every such
+  // request answers the same questions in the same place: is this a file the
+  // scanner indexed, is it sensitive, is it a symlink, is it really inside the
+  // workspace, and is the read bounded? These tests pin each answer.
+
+  it('refuses a markdown block pointed at a sensitive file', () => {
+    const root = makeWorkspace({
+      ...manifest({ a2h: 1, panels: [{ type: 'markdown', title: 'Totals', path: '.env' }] }),
+      '.env': 'API_KEY=super-secret-value\n',
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+
+    expect(ws.presentation.panels).toEqual([]);
+    expect(JSON.stringify(ws.presentation)).not.toContain('super-secret-value');
+  });
+
+  it('refuses a mutable read even when a manifest-level item names a sensitive file', () => {
+    const root = makeWorkspace({
+      ...manifest({
+        a2h: 1,
+        tasks: [
+          {
+            id: 't1',
+            title: 'Leak',
+            blocks: [{ type: 'markdown', path: 'config/credentials.json' }],
+          },
+        ],
+      }),
+      'config/credentials.json': '{"password":"hunter2"}',
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+    const task = ws.presentation.tasks.find((t) => t.id === 't1')!;
+    expect(task.blocks).toBeUndefined();
+    expect(JSON.stringify(task)).not.toContain('hunter2');
+  });
+
+  it('refuses a block pointed at a file the scanner deliberately skipped', () => {
+    const root = makeWorkspace({
+      ...manifest({ a2h: 1, panels: [{ type: 'markdown', path: 'package-lock.json' }] }),
+      'package-lock.json': '{ "name": "not content" }',
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+
+    // A lockfile is ignored by design. Being ignored is not a way back in
+    // through a different door.
+    expect(ws.presentation.panels).toEqual([]);
+  });
+
+  it('still reads a block pointed at an ordinary workspace file', () => {
+    const root = makeWorkspace({
+      ...manifest({ a2h: 1, panels: [{ type: 'markdown', path: 'notes/plan.md' }] }),
+      'notes/plan.md': '# Plan\n\nStep one.\n',
+      'README.md': '# Hi\n',
+    });
+    const ws = new Workspace(root);
+
+    expect(ws.presentation.panels).toHaveLength(1);
+    expect((ws.presentation.panels[0] as unknown as { html: string }).html).toContain('Step one');
+  });
+
+  it('does not read through an intermediate directory that links outside', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    symlink(root, 'leak', '/etc');
+
+    // A lying index. The scanner cannot produce this entry — a symlinked
+    // directory is recorded as the link, never descended into — which is
+    // exactly why containment is re-derived on every read rather than trusted
+    // from whoever built the index.
+    const reader = createWorkspaceReader({
+      rootDir: root,
+      files: [entry(root, 'leak/passwd'), entry(root, 'leak/hosts')],
+    });
+
+    expect(reader.canReadText('leak/passwd')).toBe(false);
+    expect(reader.readText('leak/passwd')).toBeUndefined();
+    expect(reader.readText('leak/hosts')).toBeUndefined();
+  });
+
+  it('refuses a sensitive path even when the index claims it is ordinary', () => {
+    const root = makeWorkspace({ '.env': 'API_KEY=super-secret-value\n' });
+    const reader = createWorkspaceReader({
+      rootDir: root,
+      files: [entry(root, '.env')],
+    });
+
+    expect(reader.canReadText('.env')).toBe(false);
+    expect(reader.readText('.env')).toBeUndefined();
+  });
+
+  it('refuses a path the index flags as a symlink', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    symlink(root, 'notes.md', '/etc/passwd');
+    const reader = createWorkspaceReader({
+      rootDir: root,
+      files: [entry(root, 'notes.md', { isSymlink: true })],
+    });
+
+    expect(reader.readText('notes.md')).toBeUndefined();
+  });
+
+  it('caps a read, and lets a caller ask for less but never for more', () => {
+    const root = makeWorkspace({ 'big.md': 'x'.repeat(4000) });
+    const reader = createWorkspaceReader({ rootDir: root, files: [entry(root, 'big.md')] });
+
+    expect(reader.readText('big.md', 100)).toHaveLength(100);
+    // Asking for a petabyte gets the ceiling, not a petabyte.
+    expect(reader.readText('big.md', Number.MAX_SAFE_INTEGER)!.length).toBe(4000);
+  });
+
+  it('treats an image reference as an image only when it really is one', () => {
+    const root = makeWorkspace({ 'shot.png': fixturePng(), 'notes.md': '# Hi\n' });
+    const reader = createWorkspaceReader({
+      rootDir: root,
+      files: [entry(root, 'shot.png', { kind: 'image' }), entry(root, 'notes.md', { kind: 'markdown' })],
+    });
+
+    expect(reader.canReadImage('shot.png')).toBe(true);
+    expect(reader.canReadImage('notes.md')).toBe(false);
+    expect(reader.canReadImage('missing.png')).toBe(false);
+  });
+
+  it('cannot be talked into a path outside the workspace by lexical tricks', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    const reader = createWorkspaceReader({ rootDir: root, files: [] });
+
+    for (const rel of ['../etc/passwd', './../../etc/passwd', 'a/../../etc/passwd', '/etc/passwd', '']) {
+      expect(reader.readText(rel)).toBeUndefined();
+      expect(reader.has(rel)).toBe(false);
+    }
+  });
+});
+
+describe('the protocol directory is untrusted input too', () => {
+  it('does not read a manifest that is a symlink', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    symlink(root, '.a2h/manifest.json', '/etc/passwd');
+    const ws = new Workspace(root);
+
+    expect(ws.presentation.semantics).toBe('inferred');
+    expect(ws.presentation.warnings.join(' ')).toMatch(/symlink/i);
+    expect(JSON.stringify(ws.presentation)).not.toMatch(/root:.*:0:0/);
+  });
+
+  it('does not read run files that are symlinks', () => {
+    const root = makeWorkspace({
+      'README.md': '# Hi\n',
+      '.a2h/runs/real.json': JSON.stringify({ id: 'real-run' }),
+    });
+    symlink(root, '.a2h/runs/linked.json', '/etc/passwd');
+    const ws = new Workspace(root);
+
+    const ids = ws.presentation.runs.map((r) => r.id);
+    expect(ids).toContain('real-run');
+    expect(ws.presentation.warnings.join(' ')).toMatch(/linked\.json is a symlink/);
+  });
+
+  it('refuses a run file too large to be a run record', () => {
+    const root = makeWorkspace({
+      'README.md': '# Hi\n',
+      '.a2h/runs/huge.json': 'x'.repeat(600 * 1024),
+    });
+    const ws = new Workspace(root);
+
+    expect(ws.presentation.runs).toEqual([]);
+    expect(ws.presentation.warnings.join(' ')).toMatch(/too large/);
   });
 });
 

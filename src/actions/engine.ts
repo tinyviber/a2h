@@ -1,4 +1,11 @@
-import type { ActionAuditEntry, ActionResult, ActionRequest, ActionView, RunView } from '../types';
+import type {
+  ActionAuditEntry,
+  ActionParam,
+  ActionResult,
+  ActionRequest,
+  ActionView,
+  RunView,
+} from '../types';
 import type { ProviderRegistry } from '../providers/types';
 
 // ---------------------------------------------------------------------------
@@ -9,10 +16,15 @@ import type { ProviderRegistry } from '../providers/types';
 //
 //   1. Only actions *declared in the workspace manifest* can be executed. The
 //      browser sends an id; it can never send a command.
-//   2. Values from the browser are treated as untrusted strings: length-capped,
-//      never interpolated into a shell, never used as a path.
-//   3. Anything whose side effect reaches beyond A2H's own state requires an
-//      explicit second confirmation from the human.
+//   2. Values from the browser are filtered against the declared schema before
+//      an executor ever sees them: undeclared keys are dropped, and a value
+//      that is not legal for its declared type is refused. Nothing is
+//      interpolated into a shell or used as a path.
+//   3. An effect that reaches beyond A2H's own state requires an explicit
+//      second confirmation from the human. This one is decided here, not by
+//      the manifest: the workspace is untrusted input, and an untrusted input
+//      does not get to set the confirmation policy. A manifest can demand
+//      confirmation; it cannot waive it.
 //   4. Execution is delegated to a registered executor. The built-in executor
 //      only simulates state changes, so nothing dangerous can happen by
 //      default — but the protocol and the UI flow are fully exercised.
@@ -79,15 +91,28 @@ export class ActionEngine {
       return this.fail(action.id, 'disabled', `"${action.label}" is currently disabled.`);
     }
 
-    const params = sanitizeParams(request.params);
-    const missing = (action.params ?? [])
+    const declaredParams = action.params ?? [];
+    const outcome = buildParams(request.params, declaredParams);
+    if (outcome.invalid) {
+      return this.fail(
+        action.id,
+        'invalid_params',
+        `"${outcome.invalid.name}" ${outcome.invalid.reason}.`,
+      );
+    }
+    const params = outcome.params;
+
+    const missing = declaredParams
       .filter((p) => p.required && !String(params[p.name] ?? '').trim())
-      .map((p) => p.label);
+      .map((p) => p.label ?? p.name);
     if (missing.length > 0) {
       return this.fail(action.id, 'missing_params', `Missing required input: ${missing.join(', ')}.`);
     }
 
-    if (action.confirm && request.confirm !== true) {
+    // The hard boundary. `external` is not the manifest's call to make, so the
+    // rule is re-stated here rather than read off `action.confirm` alone.
+    const mustConfirm = action.sideEffect === 'external' || action.confirm;
+    if (mustConfirm && request.confirm !== true) {
       return this.fail(
         action.id,
         'confirmation_required',
@@ -193,19 +218,58 @@ export class ActionEngine {
   }
 }
 
-/** Untrusted browser input: cap size, cap count, stringify, drop empties. */
-function sanitizeParams(input: unknown): Record<string, string> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) return {};
-  const out: Record<string, string> = {};
-  let n = 0;
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    if (n >= MAX_PARAMS) break;
-    if (typeof key !== 'string' || key.length > 64) continue;
-    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') continue;
-    out[key] = String(value).slice(0, MAX_PARAM_LENGTH);
-    n += 1;
+interface ParamOutcome {
+  params: Record<string, string>;
+  /** Set when a value was supplied but is not legal for its declared type. */
+  invalid?: { name: string; reason: string };
+}
+
+/**
+ * Untrusted browser input, filtered against the action's declared schema.
+ *
+ * The distinguishing property is what is *absent* from the result: a key the
+ * action never declared. An executor written against the spec therefore cannot
+ * be reached by `shell`, `cwd`, or anything else a hostile page invents — not
+ * because the executor remembers to ignore them, but because they never arrive.
+ *
+ * Values that are legal for their type are normalized (`boolean` becomes the
+ * string "true"/"false"), so an executor has one shape to handle.
+ */
+function buildParams(input: unknown, declared: ActionParam[]): ParamOutcome {
+  const params: Record<string, string> = {};
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return { params };
+
+  const supplied = input as Record<string, unknown>;
+
+  for (const spec of declared.slice(0, MAX_PARAMS)) {
+    const raw = supplied[spec.name];
+    if (raw === undefined) continue;
+    if (typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'boolean') continue;
+
+    const value = String(raw).slice(0, MAX_PARAM_LENGTH);
+
+    if (spec.type === 'select') {
+      const options = spec.options ?? [];
+      // An out-of-range select is refused rather than passed through: a
+      // provider that branches on this value would otherwise be steerable.
+      if (options.length > 0 && !options.includes(value)) {
+        return { params, invalid: { name: spec.name, reason: `must be one of: ${options.join(', ')}` } };
+      }
+    }
+
+    if (spec.type === 'boolean') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized !== 'true' && normalized !== 'false') {
+        return { params, invalid: { name: spec.name, reason: 'must be true or false' } };
+      }
+      params[spec.name] = normalized;
+      continue;
+    }
+
+    params[spec.name] = value;
   }
-  return out;
+
+  return { params };
 }
 
 function slug(kind: string): string {

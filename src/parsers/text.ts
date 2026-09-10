@@ -1,5 +1,5 @@
 import { fstatSync, readSync, closeSync } from 'node:fs';
-import { openNoFollow } from '../util/safeRead';
+import { openNoFollow, readFileNoFollow } from '../util/safeRead';
 
 // Shared text-file reading helpers with hard size caps, so no single file can
 // blow up memory. Logs / code / json / markdown all route through these.
@@ -15,25 +15,17 @@ export interface TextResult {
   totalBytes: number;
 }
 
+/**
+ * Lenient whole-file read for preview rendering: an unreadable file comes back
+ * as empty text rather than throwing, because a preview that cannot be built
+ * should still render as something. The symlink guarantee lives in
+ * `readFileNoFollow`, which is the only implementation of "read a whole file
+ * without following a link".
+ */
 export function readFileText(path: string, maxBytes: number): TextResult {
-  let fd;
-  try {
-    fd = openNoFollow(path);
-    const stat = fstatSync(fd);
-    const totalBytes = stat.size;
-    const toRead = Math.min(totalBytes, maxBytes);
-    const buf = Buffer.alloc(toRead);
-    const n = readSync(fd, buf, 0, toRead, 0);
-    return {
-      text: buf.slice(0, n).toString('utf8'),
-      truncated: totalBytes > maxBytes,
-      totalBytes,
-    };
-  } catch {
-    return { text: '', truncated: false, totalBytes: 0 };
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
+  const read = readFileNoFollow(path, maxBytes);
+  if (!read) return { text: '', truncated: false, totalBytes: 0 };
+  return { text: read.text, truncated: read.truncated, totalBytes: read.totalBytes };
 }
 
 export interface LinesResult {

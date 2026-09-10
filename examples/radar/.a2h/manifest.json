@@ -207,6 +207,11 @@
       ]
     },
     {
+      "type": "actions",
+      "title": "What to do with these drafts",
+      "ids": ["approve-draft", "send-to-agent"]
+    },
+    {
       "type": "notice",
       "tone": "info",
       "text": "Publishing is deliberately gated on a human decision. The agent stops here rather than risking an unreviewed release."
