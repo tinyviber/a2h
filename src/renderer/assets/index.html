@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
+  <!-- Filled in by the server at serve time with this process's session token.
+       Empty when the shell is opened without a server, in which case nothing
+       that mutates state will work — which is the intended outcome. -->
+  <meta name="a2h-token" content="" />
   <title>A2H</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -18,7 +22,7 @@
 
     <aside class="sidebar" id="sidebar" aria-label="Navigation">
       <div class="sidebar-inner">
-        <a class="brand" href="#" data-route="overview" id="brand">
+        <a class="brand" href="#/" id="brand">
           <span class="brand-mark">A2H</span>
           <span class="brand-sub">Agent&nbsp;to&nbsp;Human</span>
         </a>
@@ -32,6 +36,6 @@
     </main>
   </div>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

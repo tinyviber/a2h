@@ -1,0 +1,4 @@
+[12:00:01] starting build
+[12:00:02] compiling modules
+[12:00:05] error: module 'foo' not found
+[12:00:06] build failed with exit code 1

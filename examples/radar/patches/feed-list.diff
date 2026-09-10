@@ -1,0 +1,25 @@
+diff --git a/sources/feed-list.json b/sources/feed-list.json
+--- a/sources/feed-list.json
++++ b/sources/feed-list.json
+@@ -3,15 +3,17 @@
+     { "id": "lattice-blog", "url": "https://example.invalid/lattice/feed.xml", "tier": "primary" },
+     { "id": "skiff-news", "url": "https://example.invalid/skiff/news.xml", "tier": "primary" },
+     { "id": "model-tracker", "url": "https://example.invalid/models/changes.json", "tier": "secondary" },
+-    { "id": "vendor-watch", "url": "https://example.invalid/vendors/status.json", "tier": "secondary" },
+-    { "id": "community-firehose", "url": "https://example.invalid/community/all.xml", "tier": "low" }
++    { "id": "vendor-watch", "url": "https://example.invalid/vendors/status.json", "tier": "low" },
++    { "id": "community-firehose", "url": "https://example.invalid/community/all.xml", "tier": "low" },
++    { "id": "release-notes", "url": "https://example.invalid/releases/atom.xml", "tier": "primary" },
++    { "id": "standards-watch", "url": "https://example.invalid/standards/rss.xml", "tier": "secondary" }
+   ],
+   "dedupe": {
+-    "titleSimilarity": 0.86,
++    "titleSimilarity": 0.88,
+     "windowHours": 72
+   },
+   "cluster": {
+     "minConfidence": 0.55,
+-    "maxCandidatesPerRun": 5
++    "maxCandidatesPerRun": 4
+   }
+ }

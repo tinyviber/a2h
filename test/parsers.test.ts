@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { renderMarkdown, isSafeUrl, splitFrontmatter } from '../src/parsers/markdown';
+import { isWorkspaceRelative } from '../src/security/urlPolicy';
 import { parseDiff } from '../src/parsers/diff';
 import { parseJson } from '../src/parsers/json';
 import { parseLog } from '../src/parsers/log';
@@ -23,6 +24,24 @@ describe('markdown safety', () => {
     expect(isSafeUrl('mailto:someone@example.com')).toBe(true);
     expect(isSafeUrl('relative/path')).toBe(true);
     expect(isSafeUrl('#anchor')).toBe(true);
+  });
+
+  it('refuses protocol-relative and file: targets', () => {
+    // `//host` is an off-site navigation wearing a path's clothes; `file:`
+    // reaches the local disk.
+    expect(isSafeUrl('//evil.example.com/x')).toBe(false);
+    expect(isSafeUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafeUrl('blob:https://x/y')).toBe(false);
+    expect(isSafeUrl('')).toBe(false);
+  });
+
+  it('classifies workspace-relative paths separately from resolvable URLs', () => {
+    expect(isWorkspaceRelative('img/shot.png')).toBe(true);
+    expect(isWorkspaceRelative('./shot.png')).toBe(true);
+    expect(isWorkspaceRelative('/absolute/path.png')).toBe(true);
+    expect(isWorkspaceRelative('https://example.com/x.png')).toBe(false);
+    expect(isWorkspaceRelative('//example.com/x.png')).toBe(false);
+    expect(isWorkspaceRelative('data:image/png;base64,xx')).toBe(false);
   });
 
   it('renders GFM tables and code fences', () => {

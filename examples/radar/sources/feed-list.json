@@ -1,0 +1,17 @@
+{
+  "feeds": [
+    { "id": "lattice-blog", "url": "https://example.invalid/lattice/feed.xml", "tier": "primary" },
+    { "id": "skiff-news", "url": "https://example.invalid/skiff/news.xml", "tier": "primary" },
+    { "id": "model-tracker", "url": "https://example.invalid/models/changes.json", "tier": "secondary" },
+    { "id": "vendor-watch", "url": "https://example.invalid/vendors/status.json", "tier": "secondary" },
+    { "id": "community-firehose", "url": "https://example.invalid/community/all.xml", "tier": "low" }
+  ],
+  "dedupe": {
+    "titleSimilarity": 0.86,
+    "windowHours": 72
+  },
+  "cluster": {
+    "minConfidence": 0.55,
+    "maxCandidatesPerRun": 5
+  }
+}

@@ -1,4 +1,5 @@
-import { openSync, readSync, closeSync, fstatSync } from 'node:fs';
+import { readSync, closeSync, fstatSync } from 'node:fs';
+import { openNoFollow } from '../util/safeRead';
 import type { LogContent } from '../types';
 import { countLinesFull, readFileText, readTailLines, splitLines } from './text';
 import { LOG_TAIL_LINES } from '../scanner/ignore';
@@ -53,7 +54,7 @@ function scanLines(lines: string[], offset: number) {
 function scanErrors(path: string, maxBytes: number) {
   let fd;
   try {
-    fd = openSync(path, 'r');
+    fd = openNoFollow(path);
     const stat = fstatSync(fd);
     const toScan = Math.min(stat.size, maxBytes);
     const chunk = 256 * 1024;

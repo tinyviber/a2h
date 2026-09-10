@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { resolveRelPath, resolveRealPath, isWithin } from '../src/server/safePath';
+import { resolveRelPath, resolveRealPath, isWithin } from '../src/security/boundary';
 import { normalizeRel } from '../src/util/path';
 
 describe('normalizeRel', () => {

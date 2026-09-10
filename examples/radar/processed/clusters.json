@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-09-10T07:31:00Z",
+  "inputItems": 23,
+  "clusters": [
+    {
+      "id": "c1",
+      "label": "Lattice pricing change",
+      "confidence": 0.91,
+      "tier": "primary",
+      "items": ["inbox/2026-09-10-lattice-pricing.md", "inbox/2026-09-10-model-tracker-price-row.md"],
+      "survived": true
+    },
+    {
+      "id": "c2",
+      "label": "Skiff waitlist",
+      "confidence": 0.74,
+      "tier": "primary",
+      "items": ["inbox/2026-09-10-skiff-launch.md"],
+      "survived": true
+    },
+    {
+      "id": "c3",
+      "label": "Vendor outage chatter",
+      "confidence": 0.38,
+      "tier": "low",
+      "items": [
+        "inbox/2026-09-10-vendor-chatter.md"
+      ],
+      "survived": true,
+      "note": "below the publish threshold; kept as a candidate because a human asked for low-confidence items to stay visible"
+    },
+    {
+      "id": "c4",
+      "label": "Community duplicate of Lattice pricing",
+      "confidence": 0.88,
+      "items": ["inbox/2026-09-10-community-repost.md"],
+      "survived": false,
+      "mergedInto": "c1"
+    }
+  ]
+}

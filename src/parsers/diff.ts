@@ -7,14 +7,21 @@ import type { DiffContent, DiffFile, DiffHunk, DiffLine } from '../types';
 
 const MAX_DIFF_LINES = 6000;
 
+/**
+ * Parses a unified diff into structured hunks.
+ *
+ * Robustness matters more than fidelity here: agent-produced patches are
+ * frequently malformed (wrong hunk counts, truncated output, pasted fragments).
+ * Anything the parser rejects degrades to a plain line listing rather than
+ * failing the request.
+ */
 export function parseDiff(text: string): DiffContent {
-  const parsed = parsePatch(text);
-
   let files: DiffFile[];
-  if (parsed.length === 0) {
+  try {
+    const parsed = parsePatch(text);
+    files = parsed.length === 0 ? [rawFallback(text)] : parsed.map(convertFile);
+  } catch {
     files = [rawFallback(text)];
-  } else {
-    files = parsed.map(convertFile);
   }
 
   let totalLines = 0;

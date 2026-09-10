@@ -1,0 +1,16 @@
+{
+  "id": "run-0910-ingest",
+  "taskId": "radar-daily",
+  "title": "Ingest feeds",
+  "status": "succeeded",
+  "startedAt": "2026-09-10T07:00:00Z",
+  "endedAt": "2026-09-10T07:00:41Z",
+  "summary": "5 feeds polled, 34 items written to inbox/, 0 transport errors.",
+  "artifacts": ["sources/ingest.log"],
+  "steps": [
+    { "id": "s1", "title": "Load feed-list.json", "status": "succeeded" },
+    { "id": "s2", "title": "Poll 5 feeds", "status": "succeeded", "detail": "1 feed retried once" },
+    { "id": "s3", "title": "Write 34 items", "status": "succeeded" },
+    { "id": "s4", "title": "Trim inbox to 7 days", "status": "succeeded", "detail": "9 old items removed" }
+  ]
+}

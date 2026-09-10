@@ -1,4 +1,4 @@
-import type { FileKind } from '../types';
+import type { ContentKind, FileKind } from '../types';
 
 // Extension-based classification. Deterministic and convention-driven; the
 // semantic IR layer adds meaning on top of these broad categories.
@@ -107,4 +107,21 @@ export function classifyFile(name: string): Classification {
 /** True for content we treat as image previews. */
 export function isImageExt(ext: string): boolean {
   return IMAGE_EXTS.has(ext.toLowerCase());
+}
+
+/**
+ * Maps the scanner's broad file kind onto the way the content should be drawn.
+ * Everything the renderer has no special handling for degrades to "file", which
+ * is the safe default (hex/text preview, or a binary notice).
+ */
+export function contentKindOf(kind: FileKind): ContentKind {
+  switch (kind) {
+    case 'markdown': return 'markdown';
+    case 'diff': return 'diff';
+    case 'json': return 'json';
+    case 'log': return 'log';
+    case 'image': return 'image';
+    case 'code': return 'code';
+    default: return 'file';
+  }
 }
