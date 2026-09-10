@@ -1,8 +1,23 @@
 {
-  "name": "a2h",
-  "version": "0.1.0",
+  "name": "@tinyviber/a2h",
+  "version": "0.1.1",
   "description": "Agent to Human — turn messy agent workspaces into structured, human-readable local web interfaces.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tinyviber/a2h.git"
+  },
+  "homepage": "https://github.com/tinyviber/a2h#readme",
+  "bugs": {
+    "url": "https://github.com/tinyviber/a2h/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "coding-agent",
+    "human-in-the-loop",
+    "developer-tools"
+  ],
   "type": "commonjs",
   "bin": {
     "a2h": "bin/a2h.js"
@@ -15,6 +30,9 @@
   ],
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.js",

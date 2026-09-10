@@ -6,7 +6,13 @@ import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
 import { writeStarterManifest } from './init';
 
-const VERSION = '0.1.0';
+// The package manifest is the single source of truth for package identity.
+// It is resolved at runtime rather than imported: the CLI compiles into
+// `dist/cli/`, and importing a file outside tsconfig's `rootDir` is an error.
+// Both `dist/cli/` and `src/cli/` sit one level below the package root, so
+// this specifier resolves to the published manifest in either case.
+const pkg = require('../../package.json') as { name: string; version: string };
+
 const DEFAULT_PORT = 8420;
 
 interface ParsedArgs {
@@ -28,7 +34,7 @@ export function main(argv: string[]): void {
     return;
   }
   if (args.version) {
-    console.log(`a2h ${VERSION}`);
+    console.log(`${pkg.name} ${pkg.version}`);
     return;
   }
 
@@ -246,9 +252,9 @@ Producer protocol:
   from conventions and file content — zero-config still works.
 
 Examples:
-  npx a2h render
-  npx a2h render ../a-coding-task --watch
-  npx a2h init . && npx a2h render .
+  npx @tinyviber/a2h render
+  npx @tinyviber/a2h render ../a-coding-task --watch
+  npx @tinyviber/a2h init . && npx @tinyviber/a2h render .
 `);
 }
 

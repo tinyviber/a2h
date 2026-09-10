@@ -25,7 +25,7 @@ A2H is **not** another agent runtime or workflow engine. It is the human-facing 
 Requires Node.js 18+.
 
 ```bash
-npx a2h render . --open
+npx @tinyviber/a2h render . --open
 ```
 
 A2H scans the current workspace and starts a local viewer on `http://localhost:8420`.
@@ -33,7 +33,7 @@ A2H scans the current workspace and starts a local viewer on `http://localhost:8
 For live updates while an agent is working:
 
 ```bash
-npx a2h render . --watch --open
+npx @tinyviber/a2h render . --watch --open
 ```
 
 No configuration is required.
@@ -59,7 +59,7 @@ When a producer wants more control, it can write `.a2h/manifest.json` and tell A
 Start from the current workspace automatically:
 
 ```bash
-npx a2h init .
+npx @tinyviber/a2h init .
 ```
 
 A small manifest can look like this:
@@ -126,14 +126,17 @@ The built-in executor currently **simulates actions by default**. The UI says wh
 
 ## Examples
 
-Two example workspaces are included in the repository.
+Two example workspaces are included in the repository. The commands below are meant to be
+run **from a clone of this repository**, with the repo root as the working directory: the
+published npm package ships only `bin` and `dist`, so `examples/` is not present in an
+`npx` install.
 
 ### Radar
 
 A simulated daily agent workflow that ingests sources, clusters signals, writes publish candidates, and stops for human review.
 
 ```bash
-npx a2h render examples/radar --open
+npx @tinyviber/a2h render examples/radar --open
 ```
 
 See [`examples/radar`](examples/radar) and its [manifest](examples/radar/.a2h/manifest.json).
@@ -143,7 +146,7 @@ See [`examples/radar`](examples/radar) and its [manifest](examples/radar/.a2h/ma
 A workspace centered on a coding-agent task with a spec, implementation, tests, patch, screenshots, and review decisions.
 
 ```bash
-npx a2h render examples/coding-task --open
+npx @tinyviber/a2h render examples/coding-task --open
 ```
 
 See [`examples/coding-task`](examples/coding-task).
@@ -151,9 +154,11 @@ See [`examples/coding-task`](examples/coding-task).
 ## CLI
 
 ```text
-a2h [render] [path] [options]
-a2h init [path]
+npx @tinyviber/a2h [render] [path] [options]
+npx @tinyviber/a2h init [path]
 ```
+
+The package is `@tinyviber/a2h`; installed globally or run through `npx`, it exposes the command `a2h`. The rest of this document uses the `a2h` form for brevity.
 
 Common options:
 
@@ -168,10 +173,10 @@ Common options:
 Examples:
 
 ```bash
-npx a2h render
-npx a2h render ../agent-workspace --watch
-npx a2h init .
-npx a2h render . --port 9000 --open
+npx @tinyviber/a2h render
+npx @tinyviber/a2h render ../agent-workspace --watch
+npx @tinyviber/a2h init .
+npx @tinyviber/a2h render . --port 9000 --open
 ```
 
 ## Design principles
