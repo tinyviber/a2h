@@ -56,8 +56,11 @@ export function decisionFileName(at: string, actionId: string, suffix = 0): stri
 
 export function writeDecisionRecord(rootDir: string, record: DecisionRecord): DecisionWriteResult {
   // `a2h` is stamped here so every producer (the engine today, a tool wrapper
-  // later) writes the same protocol version without remembering to.
-  const payload: DecisionRecord = { a2h: 1, ...record };
+  // later) writes the same protocol version without remembering to. The spread
+  // comes first and the version second, on purpose: the writer is the authority
+  // for the version, so a caller that passes its own `a2h` — a stale wrapper, a
+  // replayed record, a hand-built object — cannot relabel the file it writes.
+  const payload: DecisionRecord = { ...record, a2h: 1 };
   const data = `${JSON.stringify(payload, null, 2)}\n`;
   // Size is checked before the directory is created, so a refused record
   // leaves no trace at all rather than an empty directory it did not earn.

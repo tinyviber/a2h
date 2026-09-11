@@ -26,6 +26,18 @@ export { writeDecisionRecord, decisionFileName, DECISIONS_DIR } from './actions/
 export { validateWorkspace } from './cli/validate';
 export type { ValidateReport } from './cli/validate';
 
+// The other direction: A2H -> Agent. `a2h guide` writes project-aware producer
+// guidance the project's own coding agent may merge into its own rules. Nothing
+// here is protocol input, and nothing here writes AGENTS.md.
+export { inspectProject } from './guide/inspect';
+export { generateGuide, AGENT_GUIDE_PATH, AGENT_GUIDE_MARKER } from './guide/generate';
+export { writeGuide } from './guide/write';
+export type { ProjectProfile, DirectoryBucket, ProjectTraits, BucketId } from './guide/types';
+// The writer guide builds on, and the one future manifest/run writers should
+// reuse: containment-checked, symlink-refusing, temp-file-and-rename.
+export { writeWorkspaceFile } from './security/writeWorkspaceFile';
+export type { WriteWorkspaceFileOptions, WriteWorkspaceFileResult } from './security/writeWorkspaceFile';
+
 // Server
 export { Workspace } from './server/workspace';
 export { createA2hServer, findAssetsDir } from './server/server';

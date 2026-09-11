@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileNoFollow, readHeadNoFollow, statNoFollow } from '../util/safeRead';
 import { resolveRealPath } from '../security/boundary';
-import type { Block, DecisionRecord, Metric, Relation } from '../types';
+import type { Block, DecisionRecord, Metric, Relation, ScanResult } from '../types';
 import type {
   ActionSpec,
   FrontmatterSemantics,
@@ -113,6 +113,23 @@ export function loadSemantics(rootDir: string, options: LoadOptions = {}): Loade
 
 export function hasExplicitSemantics(loaded: LoadedSemantics): boolean {
   return Boolean(loaded.manifest) || loaded.runSpecs.length > 0 || loaded.frontmatter.size > 0;
+}
+
+/**
+ * Loads the protocol semantics for an already-scanned workspace.
+ *
+ * The markdown allowlist — which files are worth inspecting for `a2h_*`
+ * frontmatter — is derived from the scan here rather than passed in by each
+ * caller, so the viewer, `a2h validate`, and `a2h guide` cannot drift on which
+ * files count as producer metadata. The rule has not changed: markdown, not a
+ * symlink, not sensitive.
+ */
+export function loadWorkspaceSemantics(rootDir: string, scan: ScanResult): LoadedSemantics {
+  return loadSemantics(rootDir, {
+    markdownPaths: scan.files
+      .filter((f) => f.kind === 'markdown' && !f.isSymlink && !f.sensitive)
+      .map((f) => f.path),
+  });
 }
 
 // ---------------------------------------------------------------------------

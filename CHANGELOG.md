@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+A2H already did Agent → Human: a manifest, artifacts, and a renderer. This adds the
+other direction, A2H → Agent, and closes two gaps that let a workspace make a promise
+the viewer could not keep.
+
+No change to the trust-boundary model. The policy merge, the shared URL allowlist, and
+the localhost mutation guard are untouched; so is the ordering inside `workspaceRead`.
+
+### Added
+
+- **`a2h guide [path]`.** Writes `.a2h/agent-guide.md`: project-aware producer guidance
+  for the coding agent that produces work in a workspace. It is deterministic, offline,
+  and idempotent — two runs over an unchanged workspace are byte-identical — and it
+  contains no file bodies and no file listing, only the coarse shape of the repository
+  (traits, dominant languages, the directory conventions that actually matched).
+  `a2h guide` does not start the viewer and does not run `init`.
+- **A safe writer for generated workspace files** (`writeWorkspaceFile`), used by
+  `guide` and available to future manifest and run writers. It refuses a destination
+  outside the workspace, refuses any symlinked path component, refuses non-regular
+  files, writes through a temp file in the same directory plus an atomic rename, and
+  leaves no temp behind on failure. Overwriting a file requires either the generation
+  marker or `--force`, so a user's own file is never silently replaced.
+
+### Changed
+
+- **`a2h validate` now checks every path a workspace claims a human can read**, not
+  just `items[].path`: task artifacts, run artifacts (from the manifest or from
+  `.a2h/runs/`), and the `path` of a markdown block on a panel, a task, a run, or an
+  item. Each is checked against the same reader the viewer uses, so `validate`
+  passing means the viewer can actually read it — symlinks, sensitive files, and
+  paths that leave the workspace are errors. `action.target`, `relation.target`, and
+  list `href` are labels, not file references, and are deliberately not checked.
+- `a2h --help` lists `guide`, and states the widened path claims for `validate`.
+
+### Fixed
+
+- **The decision writer is now the authority for the record's protocol version.**
+  `writeDecisionRecord` spread the caller's record over its own `a2h: 1`, so a caller
+  that passed its own version relabelled the file. The spread now happens first and the
+  version is forced after it, so every record on disk is stamped `"a2h": 1` — the
+  protocol version of the directory, not of whoever wrote the file.
+
 ## [0.1.1] — 2026-09-10
 
 Packaging hygiene and the producer contract, in one release.

@@ -6,6 +6,7 @@ import { createA2hServer, findAssetsDir } from '../server/server';
 import { scanWorkspace } from '../scanner/scan';
 import { writeStarterManifest } from './init';
 import { printValidateReport, validateWorkspace } from './validate';
+import { runGuide } from './guide';
 
 // The package manifest is the single source of truth for package identity.
 // It is resolved at runtime rather than imported: the CLI compiles into
@@ -51,6 +52,11 @@ export function main(argv: string[]): void {
     return;
   }
 
+  if (args.command === 'guide') {
+    runGuideCommand(rootDir, args.force);
+    return;
+  }
+
   runRender(rootDir, args);
 }
 
@@ -62,6 +68,16 @@ export function main(argv: string[]): void {
 function runValidate(rootDir: string): void {
   const report = validateWorkspace(rootDir);
   process.exitCode = printValidateReport(report);
+}
+
+/**
+ * `a2h guide` reports through its exit code for the same reason `validate`
+ * does: a script that regenerates a guide needs to know whether the write was
+ * refused rather than discover it later, in git.
+ */
+function runGuideCommand(rootDir: string, force: boolean): void {
+  const result = runGuide(rootDir, { force });
+  process.exitCode = result.exitCode;
 }
 
 function runInit(rootDir: string, force: boolean): void {
@@ -233,6 +249,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (a === 'init') args.command = 'init';
     else if (a === 'render') args.command = 'render';
     else if (a === 'validate') args.command = 'validate';
+    else if (a === 'guide') args.command = 'guide';
     else if (!a.startsWith('-')) {
       args.path = a;
     }
@@ -252,20 +269,21 @@ exposes the command a2h; the Usage lines below use the short form.
 
 Usage:
   a2h [render] [path] [options]
-  a2h init <path>
+  a2h init [path]
+  a2h guide [path]
   a2h validate [path]
 
 Commands:
-  render   <path>  Scan a workspace and start the local viewer (default)
-  init     <path>  Scaffold .a2h/manifest.json from the current workspace
-  validate <path>  Check the workspace against the producer protocol
-  help             Show this help
+  render    Scan a workspace and start the local viewer (default)
+  init      Scaffold .a2h/manifest.json
+  guide     Generate project-aware instructions for A2H-producing agents
+  validate  Validate producer claims
 
 Options:
   -w, --watch      Watch the workspace and live-update the viewer on changes
   -p, --port <n>   Port for the local viewer (default ${DEFAULT_PORT})
   -o, --open       Open the viewer in your default browser
-  -f, --force      (init) overwrite an existing manifest
+  -f, --force      (init, guide) overwrite an existing file
   -v, --version    Print the version
 
 Producer protocol:
@@ -274,13 +292,19 @@ Producer protocol:
   from conventions and file content — zero-config still works.
 
   validate exits 1 only when the workspace claims something broken enough to
-  mislead a human (invalid manifest, a missing item path, an action id that
-  does not resolve, an unreadable decision file). Warnings — unknown roles,
-  unused actions, an inferred-only workspace — exit 0.
+  mislead a human. That is: an unusable manifest; a missing claimed path (a
+  missing item path, a task or run artifact, or a markdown block's file); an
+  action id that does not resolve; a decision file A2H refused to read.
+  Warnings — unknown roles, unused actions, an inferred-only workspace — exit 0.
+
+  guide writes .a2h/agent-guide.md: project-aware instructions for the agent
+  that produces work here. It is not protocol input and A2H never edits
+  AGENTS.md — the project's own agent decides whether to merge from it.
 
 Examples:
   npx @tinyviber/a2h render
   npx @tinyviber/a2h render ../a-coding-task --watch
+  npx @tinyviber/a2h guide .
   npx @tinyviber/a2h init . && npx @tinyviber/a2h validate . && npx @tinyviber/a2h render .
 `);
 }

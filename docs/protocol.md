@@ -34,6 +34,15 @@ The protocol version lives in the document itself:
 than 1 is read as version 1 and produces a warning — the protocol is additive,
 so an unknown version is not an error.
 
+### `.a2h/agent-guide.md`
+
+Not protocol input. `a2h guide` writes this file as project-aware guidance for
+the agent that *produces* work in a workspace — the agent may merge durable
+rules from it into its own `AGENTS.md`. It is tooling-generated, it has no
+authority in the merge precedence below, and it is never rendered as workspace
+content. A2H does not read it as semantics, and A2H never writes or edits
+`AGENTS.md`.
+
 ## 2. Merge precedence
 
 Precedence is **field-level**, not document-level, and a later source only
@@ -195,8 +204,10 @@ claim is fine.
   inference**. The viewer still opens and zero-config reading still works.
 - Unknown fields, unknown statuses, and unknown block types are ignored or
   rendered with a fallback.
-- An item pointing at a missing path, a task referencing an unknown action, or
-  an unreadable decision file are reported by `a2h validate` as errors.
+- A claimed path that A2H cannot show — a missing item path, a missing task or
+  run artifact, a markdown block whose file is not there, a symlink, or a
+  sensitive file — a task referencing an unknown action, and a decision file
+  A2H refused to read are all reported by `a2h validate` as errors.
 
 ## 9. Asking a human for something
 
@@ -231,9 +242,13 @@ a2h validate .
 ```
 
 Exit code 0 means the workspace is presentable (warnings are allowed). Exit
-code 1 means it claims something broken enough to mislead a human: an invalid
-manifest, a missing item path, an action id that does not resolve, or a
-decision file A2H refused to read.
+code 1 means it claims something broken enough to mislead a human: an unusable
+manifest, a claimed path that is missing or that A2H will not render — a missing
+item path, a task or run artifact, or a markdown block's file — an action id
+that does not resolve, or a decision file A2H refused to read.
+
+`action.target` and `relation.target` are labels, not file references: they are
+not checked, and a relation target may name a node rather than a path.
 
 Run it after editing. Fix the errors; read the warnings.
 

@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { scanWorkspace } from '../scanner/scan';
-import { loadSemantics } from '../semantics/load';
+import { loadWorkspaceSemantics } from '../semantics/load';
+import { checkPathClaims } from './pathClaims';
 
 // ---------------------------------------------------------------------------
 // `a2h validate [path]` — the producer's pre-flight check.
@@ -53,11 +54,7 @@ export interface ValidateReport {
 export function validateWorkspace(path: string): ValidateReport {
   const rootDir = resolve(path);
   const scan = scanWorkspace({ rootDir });
-  const loaded = loadSemantics(rootDir, {
-    markdownPaths: scan.files
-      .filter((f) => f.kind === 'markdown' && !f.isSymlink && !f.sensitive)
-      .map((f) => f.path),
-  });
+  const loaded = loadWorkspaceSemantics(rootDir, scan);
 
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -66,15 +63,12 @@ export function validateWorkspace(path: string): ValidateReport {
   // workspace claims a protocol and A2H is silently ignoring it.
   if (loaded.manifestIssue) errors.push(loaded.manifestIssue);
 
-  const known = new Set(scan.files.map((f) => f.path));
-
-  // --- item paths ---------------------------------------------------------
-  for (const item of loaded.itemSpecs) {
-    const rel = normalizePath(item.path);
-    if (!known.has(rel)) {
-      errors.push(`item "${item.path}" points at a path that is not in the scanned workspace`);
-    }
-  }
+  // --- paths the workspace claims a human can read -------------------------
+  // Items, task and run artifacts, and markdown block targets all make the
+  // same promise, so they are checked by the same code against the same
+  // reader the viewer uses. `action.target` and `relation.target` are labels,
+  // not file references, and are deliberately not checked.
+  errors.push(...checkPathClaims(rootDir, scan, loaded));
 
   // --- the task / action wiring -------------------------------------------
   const taskIds = new Set(loaded.taskSpecs.map((t) => t.id));
@@ -181,8 +175,4 @@ export function printValidateReport(report: ValidateReport): number {
   console.log('');
 
   return report.errors.length > 0 ? 1 : 0;
-}
-
-function normalizePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/^\.\//, '');
 }

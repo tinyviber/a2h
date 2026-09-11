@@ -14,6 +14,11 @@ full field reference is [`protocol.md`](protocol.md).
 
 ### Starting work in a directory a human will look at
 
+If `.a2h/agent-guide.md` exists, read it first. It is project-level guidance
+generated for this repository by `a2h guide`, so it is more specific than
+anything on this page. Do not copy its project-specific text back into this
+skill — that file is regenerated, and this one is not.
+
 1. If `.a2h/manifest.json` is missing, run `a2h init .`. It scaffolds a valid
    manifest that already reflects the real files in the directory.
 2. Then **edit meaning into it**. The scaffold's roles come from file names and
@@ -81,9 +86,10 @@ records, then act on what they say.
   blocked on review" beats "done".
 - **After editing, run `a2h validate .`** and fix the errors and the warnings
   you caused.
-  - Exit **1** means a claim that would mislead a human: an unusable manifest,
-    a missing item path, an unknown action id, or a decision file A2H refused
-    to read.
+  - Exit **1** means a claim that would mislead a human: an unusable manifest, a
+    claimed path that is missing or that A2H will not render — a missing item
+    path, a task or run artifact, or a markdown block's file — an unknown action
+    id, or a decision file A2H refused to read.
   - Exit **0** means the workspace is presentable. Warnings — no manifest, no
     tasks, custom roles, unused actions — are allowed and still exit 0.
 
@@ -119,6 +125,7 @@ artifacts, and no actions is invisible to the human.
 
 ```bash
 a2h init .        # scaffold .a2h/manifest.json from the current files
+a2h guide .       # write .a2h/agent-guide.md — project-level guidance for you
 a2h validate .    # exit 1 if a claim would mislead a human; warnings exit 0
 a2h render .      # what the human runs — not your job
 ```

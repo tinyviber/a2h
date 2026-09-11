@@ -1,0 +1,4 @@
+{"id":"r-0001","observed_at":"2026-09-01T02:10:00Z","source":"feed-a","weight":0.42}
+{"id":"r-0002","observed_at":"2026-09-01T03:05:00Z","source":"feed-b","weight":0.97}
+{"id":"r-0003","observed_at":"2026-09-02T01:40:00Z","source":"feed-a","weight":0.11}
+{"id":"r-0004","observed_at":"2026-09-02T04:22:00Z","source":"feed-c","weight":0.63}
