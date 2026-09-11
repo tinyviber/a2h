@@ -119,12 +119,42 @@ If you are the agent writing the workspace, the normative field reference is
 covers the same ground as instructions — when to run `a2h init`, when to record
 a run, how to ask a human for a decision, and how to read `.a2h/decisions/`
 afterwards. A copy an agent runner can drop in place is at
-[`examples/agent-skill/SKILL.md`](examples/agent-skill/SKILL.md).
+[`examples/agent-skill/SKILL.md`](examples/agent-skill/SKILL.md). If the
+repository ships `.a2h/agent-guide.md`, read that first: it is guidance
+generated for this specific project by `a2h guide`.
 
 Check a workspace before showing it to anyone:
 
 ```bash
 npx @tinyviber/a2h validate .
+```
+
+## Guide the producing agent
+
+A2H also runs in the other direction. `a2h guide` writes `.a2h/agent-guide.md`:
+project-aware instructions for the coding agent that produces work here — which
+conventions are in use, whether this reads as a data repository or a code
+repository, how to materialize a bounded view over a corpus, and the producer
+contract in one page.
+
+```bash
+npx @tinyviber/a2h guide .
+```
+
+The file is deterministic and offline: run it twice over an unchanged workspace
+and you get identical bytes. It carries a machine marker, so regenerating it is
+safe; a file that does not carry that marker is left alone unless you pass
+`--force`.
+
+**A2H does not write `AGENTS.md`.** The guide is guidance for the agent, not
+protocol input, and it is never rendered as workspace content. The project's own
+agent reads it and decides whether to merge durable rules into `AGENTS.md`.
+
+A typical order, if you want a project prepared end to end — no project is
+required to do all of it:
+
+```text
+guide → init → validate → render
 ```
 
 ## Tasks, runs, presentation blocks, and actions
@@ -171,6 +201,7 @@ See [`examples/coding-task`](examples/coding-task).
 ```text
 npx @tinyviber/a2h [render] [path] [options]
 npx @tinyviber/a2h init [path]
+npx @tinyviber/a2h guide [path]
 npx @tinyviber/a2h validate [path]
 ```
 
@@ -182,7 +213,7 @@ Common options:
 -w, --watch       Watch the workspace and refresh on changes
 -p, --port <n>    Viewer port (default: 8420)
 -o, --open        Open the viewer in the default browser
--f, --force       Overwrite an existing manifest when using init
+-f, --force       Overwrite an existing file (init, guide)
 -v, --version     Print the version
 ```
 
@@ -192,6 +223,7 @@ Examples:
 npx @tinyviber/a2h render
 npx @tinyviber/a2h render ../agent-workspace --watch
 npx @tinyviber/a2h init .
+npx @tinyviber/a2h guide .
 npx @tinyviber/a2h render . --port 9000 --open
 ```
 

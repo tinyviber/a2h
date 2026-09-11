@@ -24,3 +24,9 @@ outputs/
 # to write. Real workspaces may still choose to commit their own.
 examples/**/.a2h/decisions/
 test/fixtures/**/.a2h/decisions/
+
+# `a2h guide` output in a demo or fixture workspace. It is generated from the
+# workspace's shape, so it is regenerable rather than authored: committing it
+# would make every demo carry a stale copy of this repository's advice.
+examples/**/.a2h/agent-guide.md
+test/fixtures/**/.a2h/agent-guide.md

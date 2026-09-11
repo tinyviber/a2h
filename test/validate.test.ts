@@ -158,6 +158,165 @@ describe('validate rejects what would mislead a human', () => {
   });
 });
 
+describe('validate checks every path the workspace claims a human can read', () => {
+  function exit(report: ReturnType<typeof validateWorkspace>): number {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    return printValidateReport(report);
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rejects a task artifact that is not in the workspace', () => {
+    const report = validateWorkspace(
+      makeWorkspace({
+        ...manifest({
+          a2h: 1,
+          tasks: [{ id: 'review', artifacts: ['spec.md', 'outputs/gone.md'] }],
+        }),
+        'spec.md': '# Spec\n',
+      }),
+    );
+
+    expect(report.errors.join(' ')).toMatch(/task "review" artifact "outputs\/gone\.md"/);
+    expect(exit(report)).toBe(1);
+  });
+
+  it('rejects a run artifact that is not in the workspace, from either run source', () => {
+    const fromManifest = validateWorkspace(
+      makeWorkspace({
+        ...manifest({ a2h: 1, runs: [{ id: 'run-1', artifacts: ['gone/run.md'] }] }),
+        'README.md': README,
+      }),
+    );
+    expect(fromManifest.errors.join(' ')).toMatch(/run "run-1" artifact "gone\/run\.md"/);
+    expect(exit(fromManifest)).toBe(1);
+
+    // A run dropped into `.a2h/runs/` makes the same promise as one declared in
+    // the manifest, so it is checked by the same code.
+    const fromFile = validateWorkspace(
+      makeWorkspace({
+        '.a2h/runs/2026-09-10-job.json': JSON.stringify({
+          id: 'run-from-file',
+          artifacts: ['gone/artifact.md'],
+        }),
+        'README.md': README,
+      }),
+    );
+    expect(fromFile.errors.join(' ')).toMatch(/run "run-from-file" artifact "gone\/artifact\.md"/);
+  });
+
+  it('rejects a markdown block target that is missing, wherever the block appears', () => {
+    const cases: Record<string, unknown>[] = [
+      { panels: [{ type: 'markdown', path: 'gone/panel.md' }] },
+      { tasks: [{ id: 't1', blocks: [{ type: 'markdown', path: 'gone/task.md' }] }] },
+      { runs: [{ id: 'r1', blocks: [{ type: 'markdown', path: 'gone/run.md' }] }] },
+      {
+        items: [
+          { path: 'README.md', blocks: [{ type: 'markdown', path: 'gone/item.md' }] },
+        ],
+      },
+    ];
+
+    for (const doc of cases) {
+      const report = validateWorkspace(
+        makeWorkspace({ ...manifest({ a2h: 1, ...doc }), 'README.md': README }),
+      );
+      const message = report.errors.join(' ');
+      expect(message, JSON.stringify(doc)).toMatch(/markdown block/);
+      expect(message, JSON.stringify(doc)).toContain('gone/');
+      expect(exit(report), JSON.stringify(doc)).toBe(1);
+    }
+  });
+
+  it('passes once every claimed path is really there', () => {
+    const report = validateWorkspace(
+      makeWorkspace({
+        ...manifest({
+          a2h: 1,
+          panels: [{ type: 'markdown', path: 'docs/panel.md' }],
+          tasks: [
+            {
+              id: 't1',
+              artifacts: ['docs/task.md'],
+              blocks: [{ type: 'markdown', path: 'docs/task-block.md' }],
+            },
+          ],
+          runs: [
+            {
+              id: 'r1',
+              artifacts: ['docs/run.md'],
+              blocks: [{ type: 'markdown', path: 'docs/run-block.md' }],
+            },
+          ],
+          items: [
+            { path: 'docs/item.md', blocks: [{ type: 'markdown', path: 'docs/item-block.md' }] },
+          ],
+        }),
+        'docs/panel.md': '# Panel\n',
+        'docs/task.md': '# Task\n',
+        'docs/task-block.md': '# Task block\n',
+        'docs/run.md': '# Run\n',
+        'docs/run-block.md': '# Run block\n',
+        'docs/item.md': '# Item\n',
+        'docs/item-block.md': '# Item block\n',
+      }),
+    );
+
+    expect(report.errors).toEqual([]);
+    expect(exit(report)).toBe(0);
+  });
+
+  it('rejects a claimed path the renderer would refuse to read', () => {
+    const root = makeWorkspace({
+      ...manifest({ a2h: 1, items: [{ path: 'linked.md' }, { path: '.env' }] }),
+      '.env': 'API_KEY=not-a-real-value\n',
+      'README.md': README,
+    });
+    const outside = makeWorkspace({ 'readme.md': '# outside\n' });
+    symlink(root, 'linked.md', `${outside}/readme.md`);
+
+    const report = validateWorkspace(root);
+    expect(report.errors.join(' ')).toMatch(/linked\.md/);
+    expect(report.errors.join(' ')).toMatch(/not a file A2H will render/);
+    expect(report.errors.join(' ')).toMatch(/\.env/);
+    expect(exit(report)).toBe(1);
+  });
+
+  it('does not mistake action or relation targets for filesystem paths', () => {
+    // `action.target` is a label (here, a directory prefix), and
+    // `relation.target` is a workspace path *or* a node id. Neither is a claim
+    // that a readable file exists, so neither may become a missing-path error.
+    const report = validateWorkspace(
+      makeWorkspace({
+        ...manifest({
+          a2h: 1,
+          tasks: [{ id: 'review', actions: ['approve'] }],
+          actions: [
+            {
+              id: 'approve',
+              label: 'Approve',
+              taskId: 'review',
+              target: 'publish-candidates/',
+            },
+          ],
+          items: [
+            {
+              path: 'README.md',
+              relations: [
+                { kind: 'related', target: 'a node id, not a path' },
+                { kind: 'derived-from', target: 'ghost/never-existed.md' },
+              ],
+            },
+          ],
+        }),
+        'README.md': README,
+      }),
+    );
+
+    expect(report.errors).toEqual([]);
+  });
+});
+
 describe('the exit code is the contract', () => {
   afterEach(() => vi.restoreAllMocks());
 

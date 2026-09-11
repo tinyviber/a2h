@@ -115,6 +115,62 @@ describe('the docs state what validate actually does', () => {
     expect(help).toMatch(/missing item path/);
     expect(read('docs/protocol.md')).toMatch(/a missing item path/);
   });
+
+  it('does not reduce validate to item paths alone', () => {
+    // Items were the only claim validate checked until it grew the rest of the
+    // protocol. Documentation that still says "item path" and nothing else is
+    // describing a command that no longer exists.
+    const help = capture(['--help']);
+    for (const text of [help, read('docs/protocol.md')]) {
+      expect(text).not.toMatch(/only checks? (the )?item/i);
+      expect(text).toMatch(/task or run artifact/);
+      expect(text).toMatch(/markdown block/);
+    }
+    expect(read(SKILL_DOC)).toMatch(/task or run artifact/);
+    expect(read(SKILL_COPY)).toMatch(/task or run artifact/);
+  });
+
+  it('states in the protocol that action and relation targets are not paths', () => {
+    const protocol = read('docs/protocol.md');
+    expect(protocol).toMatch(/`action\.target` and `relation\.target` are labels/);
+  });
+});
+
+describe('the agent guide is documented where an agent will look', () => {
+  it('says in the protocol that .a2h/agent-guide.md is not protocol input', () => {
+    const protocol = read('docs/protocol.md');
+    expect(protocol).toMatch(/`\.a2h\/agent-guide\.md`/);
+    expect(protocol).toMatch(/Not protocol input/);
+    // The claim that matters: it is not merge authority and not rendered.
+    expect(protocol).toMatch(/never rendered as workspace\s+content/);
+  });
+
+  it('tells both skill copies to read the guide, without copying repo-specific text into them', () => {
+    for (const file of [SKILL_DOC, SKILL_COPY]) {
+      const md = read(file);
+      expect(md, file).toMatch(/`\.a2h\/agent-guide\.md`/);
+      expect(md, file).toMatch(/read it first/);
+      expect(md, file).toMatch(/Do not copy its project-specific text back into this/);
+      // The generic skill must not carry any one repository's vocabulary.
+      expect(md, file).not.toMatch(/cptrain/i);
+    }
+  });
+
+  it('keeps the guide in the README workflow without making it mandatory', () => {
+    const readme = read('README.md');
+    expect(readme).toMatch(/npx @tinyviber\/a2h guide \./);
+    expect(readme).toMatch(/guide → init → validate → render/);
+    expect(readme).toMatch(/no project is\s+required to do all of it/);
+    expect(readme).toMatch(/A2H does not write `AGENTS\.md`/);
+  });
+
+  it('records the unreleased work instead of inventing a version for it', () => {
+    const changelog = read('CHANGELOG.md');
+    expect(changelog).toMatch(/## \[Unreleased\]/);
+    expect(changelog).toMatch(/a2h guide \[path\]/);
+    expect(changelog).toMatch(/every path a workspace claims a human can read/);
+    expect(changelog).toMatch(/authority for the record's protocol version/);
+  });
 });
 
 describe('a published invocation names the published package', () => {
@@ -145,6 +201,16 @@ describe('a published invocation names the published package', () => {
   it('does not imply the npm tarball ships examples/', () => {
     const pkg = JSON.parse(read('package.json')) as { files: string[] };
     expect(pkg.files).not.toContain('examples');
+  });
+});
+
+describe('the help lists every command the CLI implements', () => {
+  it('lists render, init, guide and validate, with guide in the usage lines', () => {
+    const help = capture(['--help']);
+    for (const command of ['render', 'init', 'guide', 'validate']) {
+      expect(help, command).toMatch(new RegExp(`^  ${command}\\b`, 'm'));
+    }
+    expect(help).toMatch(/a2h guide \[path\]/);
   });
 });
 

@@ -215,6 +215,63 @@ describe('the writer refuses to leave the workspace', () => {
   });
 });
 
+describe('the writer is the authority for the protocol version', () => {
+  // A decision record's `a2h` describes the file format. A caller — a stale
+  // wrapper, a replayed record, a hand-built object — must not be able to
+  // relabel a file the writer is about to create, or the audit trail stops
+  // meaning one thing.
+  const RECORD: DecisionRecord = {
+    at: AT,
+    actionId: 'approve',
+    kind: 'approve',
+    sideEffect: 'external',
+    ok: true,
+    simulated: true,
+    message: 'Approved.',
+    executor: 'mock',
+    params: { draft: 'a.md' },
+  };
+
+  it('forces `a2h: 1` over whatever the caller passed, and keeps every other field', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    const result = writeDecisionRecord(root, { ...RECORD, a2h: 999 });
+    expect(result.written).toBe(true);
+
+    const onDisk = JSON.parse(
+      readFileSync(join(decisionsDir(root), decisionFiles(root)[0]!), 'utf8'),
+    ) as DecisionRecord;
+
+    expect(onDisk.a2h).toBe(1);
+    expect(onDisk.at).toBe(AT);
+    expect(onDisk.actionId).toBe('approve');
+    expect(onDisk.kind).toBe('approve');
+    expect(onDisk.sideEffect).toBe('external');
+    expect(onDisk.ok).toBe(true);
+    expect(onDisk.simulated).toBe(true);
+    expect(onDisk.message).toBe('Approved.');
+    expect(onDisk.executor).toBe('mock');
+    expect(onDisk.params).toEqual({ draft: 'a.md' });
+  });
+
+  it('names the file from the record, not from the version it was handed', () => {
+    const root = makeWorkspace({ 'README.md': '# Hi\n' });
+    writeDecisionRecord(root, { ...RECORD, a2h: 7 });
+    expect(decisionFiles(root)).toEqual([decisionFileName(AT, 'approve')]);
+  });
+
+  it('reads back through the loader as version 1', () => {
+    const root = makeWorkspace({ ...manifest(MANIFEST), 'README.md': '# Hi\n' });
+    writeDecisionRecord(root, { ...RECORD, a2h: 999 });
+
+    const restarted = new Workspace({ rootDir: root, now: FIXED });
+    const entry = restarted.presentation.audit.find((e) => e.actionId === 'approve');
+
+    expect(entry).toBeDefined();
+    expect(entry!.a2h).toBe(1);
+    expect(entry!.params).toEqual({ draft: 'a.md' });
+  });
+});
+
 describe('a decision outlives the process that made it', () => {
   it('reloads into the audit trail of a fresh workspace', async () => {
     const root = makeWorkspace({ ...manifest(MANIFEST), 'README.md': '# Hi\n' });
