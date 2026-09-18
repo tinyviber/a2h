@@ -1,6 +1,6 @@
 {
   "name": "@tinyviber/a2h",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent to Human — turn messy agent workspaces into structured, human-readable local web interfaces.",
   "license": "MIT",
   "repository": {

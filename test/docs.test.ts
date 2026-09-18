@@ -220,7 +220,7 @@ describe('the version has one source', () => {
   it('--version follows package.json, with no second constant to keep in sync', () => {
     const pkg = JSON.parse(read('package.json')) as { name: string; version: string };
     expect(pkg.name).toBe('@tinyviber/a2h');
-    expect(pkg.version).toBe('0.1.1');
+    expect(pkg.version).toBe('0.1.2');
     expect(capture(['--version'])).toBe(`${pkg.name} ${pkg.version}`);
   });
 
