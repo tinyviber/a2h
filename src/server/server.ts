@@ -63,6 +63,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.tif': 'image/tiff',
   '.tiff': 'image/tiff',
   '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
   '.map': 'application/json; charset=utf-8',
 };
 
@@ -76,7 +78,7 @@ const INLINE_SAFE_EXTS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif', '.tif', '.tiff', '.svg',
 ]);
 
-const ASSET_EXTS = new Set(['.html', '.css', '.js', '.mjs', '.svg', '.png', '.json', '.map', '.woff2']);
+const ASSET_EXTS = new Set(['.html', '.css', '.js', '.mjs', '.svg', '.png', '.json', '.map', '.woff2', '.woff', '.ttf']);
 
 // Restrictive CSP: no external scripts/images/connections, no inline script.
 const PAGE_CSP =

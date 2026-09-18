@@ -50,6 +50,35 @@ describe('markdown safety', () => {
     expect(html).toContain('<pre>');
   });
 
+  it('renders inline and display dollar math with KaTeX', () => {
+    const html = renderMarkdown('Euler: $e^{i\\pi}+1=0$.\n\n$$\\sum_{i=1}^n i$$');
+    expect(html).toContain('<span class="katex">');
+    expect(html).toContain('<span class="katex-display">');
+    expect(html).toContain('annotation encoding="application/x-tex"');
+  });
+
+  it('keeps fenced code newlines and language classes without a highlighter', () => {
+    const html = renderMarkdown('```ts\nconst first = 1;\nconst second = 2;\n```');
+    expect(html).toContain('<pre><code class="language-ts">const first = 1;\nconst second = 2;\n</code></pre>');
+    expect(html).not.toContain('<br>');
+  });
+
+  it('accepts an optional fenced-code highlighter without requiring one', () => {
+    const html = renderMarkdown('```js\nconst answer = 42;\n```', undefined, {
+      highlight(code, language) {
+        return `<pre class="highlighted"><code data-language="${language}">${code}</code></pre>`;
+      },
+    });
+    expect(html).toContain('<pre class="highlighted"><code data-language="js">const answer = 42;\n</code></pre>');
+  });
+
+  it('does not fail the whole document for an unsupported TeX command', () => {
+    const html = renderMarkdown('Before $\\notARealCommand$ after');
+    expect(html).toContain('Before');
+    expect(html).toContain('notARealCommand');
+    expect(html).toContain('mathcolor="#cc0000"');
+  });
+
   it('resolves relative images through the resolver and blocks external', () => {
     const seen: string[] = [];
     renderMarkdown('![alt](./img.png)', (src) => {

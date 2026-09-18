@@ -295,6 +295,31 @@ button.card { width: 100%; text-align: left; font-family: inherit; font-size: in
 /* Code (inline) */
 .prose code, .prose pre code { font-family: var(--mono); font-size: 0.9em; }
 .prose code { background: var(--paper); border-radius: 4px; padding: 1px 5px; }
+.prose pre {
+  margin: 0 0 1em;
+  padding: 16px 20px;
+  overflow-x: auto;
+  background: var(--paper);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  white-space: pre;
+}
+.prose pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+}
+
+/* markdown-it-texmath wrappers around KaTeX output */
+.prose eq { display: inline-block; }
+.prose eqn { display: block; }
+.prose .katex { font-size: 1em; }
+.prose .katex-display { overflow-x: auto; overflow-y: hidden; }
 
 /* ------------------------------------------------------------------ Code view */
 .code-wrap, .log-wrap, .diff-wrap { max-height: 70vh; overflow: auto; }
